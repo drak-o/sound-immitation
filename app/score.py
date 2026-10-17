@@ -29,21 +29,41 @@ _WINDOW = np.hanning(_FRAME_SAMPLES)
 
 class Scorer:
     def percent(self, clip: Clip, take: Take) -> float:
-        reference = _frame_spectra(
+        reference_power = _frame_spectra(
             resample(clip.samples, clip.sample_rate, _TARGET_RATE)
         )
-        recorded = _frame_spectra(
+        recorded_power = _frame_spectra(
             resample(take.samples, take.sample_rate, _TARGET_RATE)
         )
-        reference = _band_distribution(reference)
-        recorded = _band_distribution(recorded)
+        reference = _log_bands(reference_power)
+        recorded = _log_bands(recorded_power)
         if recorded.shape[0] == 0 or reference.shape[0] == 0:
             print("similarity=0.0000 percent=0.0")
             return 0.0
         similarity = _dtw_similarity(reference, recorded)
+        take_flat = float(np.median(_spectral_flatness(recorded_power)))
+        # Herre, Allamanche, and Hellmuth, WASPAA 2001: flatness near 1 is
+        # noise. Cosine only sees band direction, so the clipped breath
+        # still scored 79% on spongebob. That breath measured 0.55–0.64.
+        # Every clip is at most 0.20.
+        if take_flat > 0.45:
+            similarity = 0.0
         percent = round(max(0.0, similarity) * 100, 1)
-        print(f"similarity={similarity:.4f} percent={percent}")
+        print(f"similarity={similarity:.4f} flatness={take_flat:.2f} percent={percent}")
         return percent
+
+
+def _spectral_flatness(power: np.ndarray) -> np.ndarray:
+    """Geometric mean over arithmetic mean of the eight bands, per frame.
+
+    Herre, Allamanche, and Hellmuth, "Robust Matching of Audio Signals
+    Using Spectral Flatness Features," Proc. WASPAA, pp. 127–130, 2001.
+    Flatness near 1 is noise. Near 0 is tonal.
+    """
+    floored = np.maximum(power, 1e-20)
+    geometric = np.exp(np.mean(np.log(floored), axis=1))
+    arithmetic = np.mean(floored, axis=1)
+    return geometric / np.maximum(arithmetic, 1e-20)
 
 
 def _frame_spectra(samples: np.ndarray) -> np.ndarray:
@@ -67,36 +87,56 @@ def _frame_spectra(samples: np.ndarray) -> np.ndarray:
     return spectra
 
 
-def _band_distribution(spectra: np.ndarray) -> np.ndarray:
-    """Divide each frame by its band sum so loudness cannot create a match."""
+def _log_bands(spectra: np.ndarray) -> np.ndarray:
+    """Mean-centered decibel band energies.
+
+    Seyerlehner, Widmer, and Knees, "Frame Level Audio Similarity — A
+    Codebook Approach," Proc. DAFx-08, Espoo, 2008, eq. 3,
+    https://www.cp.jku.at/research/papers/Seyerlehner_etal_DAFx_2008.pdf
+    X(k)dB = 20 log10(X(k)). A gain is a constant in the log domain, so
+    subtracting the frame mean removes loudness. A frame whose band sum
+    is below 1e-12 stays zero.
+    """
     if spectra.size == 0:
         return spectra
-    totals = spectra.sum(axis=1, keepdims=True)
-    distributed = np.zeros_like(spectra)
-    loud = totals[:, 0] > 1e-12
-    distributed[loud] = spectra[loud] / totals[loud]
-    return distributed
+    logged = np.zeros_like(spectra)
+    totals = spectra.sum(axis=1)
+    loud = totals > 1e-12
+    if not np.any(loud):
+        return logged
+    peaks = spectra[loud].max(axis=1, keepdims=True)
+    # 1e-6 of the peak. 20*log10(0) is undefined.
+    floored = np.maximum(spectra[loud], peaks * 1e-6)
+    decibels = 20.0 * np.log10(floored)
+    logged[loud] = decibels - decibels.mean(axis=1, keepdims=True)
+    return logged
 
 
-def _band_overlap(left: np.ndarray, right: np.ndarray) -> float:
-    """Share of each frame's band energy that falls in the same bands.
+def _band_cosine(left: np.ndarray, right: np.ndarray) -> float:
+    """Cosine similarity of two mean-centered log-band frames.
 
-    A breath covers every band. Cosine similarity still counts that as a
-    match when the clip only uses some of them.
+    Foote, "Content-Based Retrieval of Music and Audio," Proc. SPIE 3229,
+    pp. 138–147, 1997. Seyerlehner, Widmer, and Knees, DAFx-08, 2008,
+    reference [10].
+
+    Histogram intersection is not used. On equal-sum histograms it is half
+    an L1 distance (Seyerlehner et al. 2008, eq. 6–7), the measure from
+    Swain and Ballard, "Color Indexing," Int. J. Computer Vision 7(1),
+    pp. 11–32, 1991.
     """
     left_norm = float(np.linalg.norm(left))
     right_norm = float(np.linalg.norm(right))
     # Two silent frames are the same shape. One silent frame matches nothing.
     if left_norm < 1e-12 or right_norm < 1e-12:
         return 1.0 if left_norm < 1e-12 and right_norm < 1e-12 else 0.0
-    return float(np.minimum(left, right).sum())
+    return max(0.0, float(np.dot(left, right) / (left_norm * right_norm)))
 
 
 def _dtw_similarity(reference: np.ndarray, take: np.ndarray) -> float:
-    """Mean band overlap along an 80 ms Sakoe-Chiba band.
+    """Mean cosine similarity along an 80 ms Sakoe-Chiba band.
 
-    The recording stays on the clip's timeline. Local cost is the unshared
-    fraction of two 8-band frames.
+    The recording stays on the clip's timeline. Local cost is one minus
+    the cosine similarity of two log-band frames.
     """
     ref = np.asarray(reference, dtype=np.float64)
     rec = np.asarray(take, dtype=np.float64)
@@ -110,7 +150,7 @@ def _dtw_similarity(reference: np.ndarray, take: np.ndarray) -> float:
         start = max(1, center - band)
         end = min(column_count, center + band)
         for column in range(start, end + 1):
-            local = 1.0 - _band_overlap(ref[row - 1], rec[column - 1])
+            local = 1.0 - _band_cosine(ref[row - 1], rec[column - 1])
             cost[row, column] = local + min(
                 cost[row - 1, column],
                 cost[row, column - 1],
@@ -120,7 +160,7 @@ def _dtw_similarity(reference: np.ndarray, take: np.ndarray) -> float:
     column = column_count
     similarities: list[float] = []
     while row > 0 and column > 0:
-        similarities.append(_band_overlap(ref[row - 1], rec[column - 1]))
+        similarities.append(_band_cosine(ref[row - 1], rec[column - 1]))
         steps = (
             (cost[row - 1, column - 1], row - 1, column - 1),
             (cost[row - 1, column], row - 1, column),
