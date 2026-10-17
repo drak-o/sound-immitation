@@ -13,13 +13,6 @@ from websockets.asyncio.server import serve
 from websockets.datastructures import Headers
 from websockets.http11 import Response
 
-_FILES = {
-    "/": "index.html",
-    "/index.html": "index.html",
-    "/styles.css": "styles.css",
-    "/overlay.js": "overlay.js",
-}
-
 _TYPES = {
     ".html": "text/html; charset=utf-8",
     ".css": "text/css; charset=utf-8",
@@ -51,6 +44,27 @@ class OverlayHub:
             raise SystemExit(
                 f"Overlay did not start on port {port}: {self._start_error}"
             )
+
+    def stop(self) -> None:
+        """Close the page and the socket. Called when main.py exits."""
+        loop = self._loop
+        thread = self._thread
+        if loop is None or thread is None or not thread.is_alive():
+            return
+
+        async def _shutdown() -> None:
+            server = self._server
+            if server is not None:
+                server.close()
+                await server.wait_closed()
+
+        future = asyncio.run_coroutine_threadsafe(_shutdown(), loop)
+        try:
+            future.result(timeout=5)
+        except Exception:
+            pass
+        loop.call_soon_threadsafe(loop.stop)
+        thread.join(timeout=5)
 
     def publish(self, message: dict) -> None:
         if self._loop is None:
@@ -126,8 +140,9 @@ class OverlayHub:
         path = request.path.split("?", 1)[0]
         if path == "/ws":
             return None
-        name = _FILES.get(path)
-        if name is None:
+        # The overlay directory is the file list. A copied table goes stale.
+        name = "index.html" if path == "/" else path.removeprefix("/")
+        if name != Path(name).name:
             return connection.respond(404, "Not found\n")
         file_path = self._directory / name
         if not file_path.is_file():
@@ -138,7 +153,10 @@ class OverlayHub:
                 ("Date", email.utils.formatdate(usegmt=True)),
                 ("Connection", "close"),
                 ("Content-Length", str(len(body))),
-                ("Content-Type", _TYPES[file_path.suffix]),
+                (
+                    "Content-Type",
+                    _TYPES.get(file_path.suffix, "application/octet-stream"),
+                ),
                 ("Cache-Control", "no-store"),
             ]
         )

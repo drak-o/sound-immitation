@@ -86,7 +86,7 @@ function apply(message) {
     state.live = null;
     countdownNode.textContent = "";
     resultNode.textContent = "";
-    attemptNode.textContent = String(message.attempt);
+    attemptNode.textContent = `Attempt ${message.attempt}`;
   } else if (message.type === "countdown") {
     state.mode = "countdown";
     countdownNode.textContent = String(message.n);
@@ -97,7 +97,8 @@ function apply(message) {
     countdownNode.textContent = "";
   } else if (message.type === "result") {
     state.mode = "result";
-    resultNode.textContent = `${message.percent}%`;
+    const verdict = message.passed ? "Passed" : "Failed";
+    resultNode.textContent = `${verdict} ${message.percent}%`;
     resultNode.dataset.passed = message.passed ? "true" : "false";
   }
   draw();

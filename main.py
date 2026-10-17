@@ -13,6 +13,9 @@ from app.deaths import DeathMatcher
 
 
 class App:
+    def __init__(self) -> None:
+        self._hub = None
+
     def run(self) -> None:
         parser = argparse.ArgumentParser(
             description="Play a sound when you die in Minecraft and record an imitation."
@@ -101,6 +104,7 @@ class App:
 
         audio = AudioSession(config.sounds_dir, config.countdown_sound)
         hub = OverlayHub(ROOT / "overlay")
+        self._hub = hub
         hub.start(config.overlay_port)
         return RoundController(config, audio, Scorer(), hub, InputLock())
 
@@ -111,11 +115,14 @@ class App:
 
 
 def main() -> None:
+    app = App()
     try:
-        App().run()
+        app.run()
     except KeyboardInterrupt:
         print("\nStopped.")
-        sys.exit(0)
+    finally:
+        if app._hub is not None:
+            app._hub.stop()
 
 
 if __name__ == "__main__":

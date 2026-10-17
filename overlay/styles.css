@@ -41,12 +41,11 @@ body {
 }
 
 .result {
-  right: 0;
   bottom: 6%;
-  left: 0;
+  left: 1.6rem;
   font-size: 6rem;
   line-height: 1;
-  text-align: center;
+  text-align: left;
 }
 
 .result[data-passed="false"] {
