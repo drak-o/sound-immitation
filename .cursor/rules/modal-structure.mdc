@@ -1,0 +1,34 @@
+---
+description: Modal component file structure — index.tsx + styles.css only
+alwaysApply: true
+globs:
+  - web/components/modals/**
+---
+
+# Modal File Structure
+
+When the project uses `web/components/modals/`, every modal lives in its own folder with exactly two files:
+
+- `index.tsx` — all component logic, state, and JSX (default export)
+- `styles.css` — co-located styles, imported inside `index.tsx`
+
+```
+// ❌ BAD — separate component file + re-export barrel
+web/components/modals/MyModal/
+  MyModal.tsx      ← logic
+  index.ts         ← export { default } from "./MyModal"
+  styles.css
+
+// ✅ GOOD — all logic directly in index.tsx
+web/components/modals/MyModal/
+  index.tsx        ← logic + JSX, default export
+  styles.css
+```
+
+Import by folder path (adjust alias to match the project's tsconfig):
+
+```tsx
+import MyModal from "@/components/modals/MyModal";
+```
+
+Styling follows [ui-primitives-first.mdc](ui-primitives-first.mdc) — tokens from `globals.css`, semantic tags for typography, and all modal-specific styles in that modal's co-located `styles.css`.

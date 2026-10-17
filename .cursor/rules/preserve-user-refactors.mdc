@@ -1,0 +1,18 @@
+---
+description: Do not revert the user's manual edits when continuing or fixing agent work
+alwaysApply: true
+---
+
+# Preserve user refactors
+
+If the user manually refactored or changed code while you were working (or between turns), **do not overwrite their version** with your earlier implementation.
+
+- Before re-applying a patch, **re-read the current file** from the workspace and base edits on what is there now.
+- Prefer **minimal deltas** that fix only the reported issue or complete the task, instead of replacing whole sections with a "clean" copy from memory.
+- If your prior approach and the user's edits diverge, **keep their structure and naming** unless they ask to revert or the code is broken.
+- When unsure whether a change is yours or the user's, **assume the on-disk file is authoritative** and merge your work into it.
+
+```text
+// ❌ BAD — blind StrReplace from an old snapshot, wiping the user's rename or extract
+// ✅ GOOD — read file, then patch only the lines needed for the next fix
+```

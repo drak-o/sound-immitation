@@ -1,0 +1,187 @@
+---
+description: Fight complexity via deep modules, information hiding, and simple interfaces (Ousterhout)
+alwaysApply: true
+---
+
+# Philosophy of Software Design
+
+Complexity is anything that makes software hard to understand or change. When uncertain, prefer the design that reduces cognitive load, hides details behind stable interfaces, eliminates special cases, and creates deeper modules — not shorter files or clever compactness.
+
+`MUST` = binding. `SHOULD` = strong default. `MUST NOT` = forbidden.
+
+## Primary Checks
+
+Before finalizing any change, verify:
+- Did cognitive load go down?
+- Is the module deeper (simple interface, substantial hidden work)?
+- Are special cases isolated, not scattered at call sites?
+- Does the interface describe the abstraction, not the mechanism?
+- Did we avoid pass-through layers and tactical patches?
+
+## Core Rules
+
+1. **Deep modules** — small interface, meaningful semantics, substantial complexity hidden inside. MUST NOT create pass-through wrappers or thin library facades that add names without simplification.
+2. **Information hiding** — hide representations, storage, protocol, and edge-case normalization. MUST NOT leak implementation details through public APIs.
+3. **Narrow interfaces** — design around what callers need. MUST NOT require fragile call sequences, setup rituals, or mode/flag parameters that expose internals.
+4. **Pull complexity downward** — prefer a slightly more complex implementation if all callers become simpler.
+5. **Strategic over tactical** — reshape abstractions when friction recurs; MUST NOT patch symptoms with flags, copy-paste, or one more exposed detail.
+6. **Special-general decomposition** — keep the normal path clean; isolate rare behavior instead of polluting the core with conditionals.
+7. **Comments** — explain contracts, invariants, and non-obvious design decisions (the *why* a reader cannot infer from names or structure). SHOULD NOT restate implementation-level *what* the code already says. MUST NOT use comments to compensate for bad naming or poor decomposition.
+
+## Forbidden Patterns
+
+- Shallow decomposition (many tiny units that don't reduce understanding cost)
+- Interface leakage (storage, transport, caching mechanics on ordinary APIs)
+- Complexity spread (same special handling repeated across call sites)
+- Temporal APIs (`prepare/process/finalize` without domain concepts; partial objects whose meaning depends on call order)
+
+---
+
+## Feature Examples
+
+### Export pipeline (deep module vs shallow pass-through)
+
+```javascript
+// BAD — shallow: callers must know file format, paths, and steps
+async function readJson(path) { return JSON.parse(await fs.readFile(path)); }
+async function writeJson(path, data) { await fs.writeFile(path, JSON.stringify(data)); }
+async function validateSchema(data, schema) { /* ... */ }
+
+// GOOD — deep: one concept, one interface, details hidden
+class ProjectExporter {
+  /** Export a no-code project to a runnable scaffold at destination. */
+  async export(sourceProject, destination) {
+    const model = await this.#loadAndValidate(sourceProject);
+    await this.#materialize(model, destination);
+  }
+}
+```
+
+### Information hiding (don't leak storage shape)
+
+```javascript
+// BAD — callers depend on internal representation
+class UserStore {
+  getRows() { return this.db.query('SELECT * FROM users'); }
+  setRows(rows) { this.rows = rows; }
+}
+
+// GOOD — callers depend on the concept, not the table
+class UserStore {
+  async findByEmail(email) { /* ... */ }
+  async save(user) { /* ... */ }
+}
+```
+
+### Interface design (eliminate call-order traps)
+
+```javascript
+// BAD — fragile temporal API
+const parser = new ConfigParser();
+parser.setFormat('json');
+parser.setStrict(true);
+parser.load(file); // throws if order wrong
+
+// GOOD — valid states only; options at construction
+const config = await Config.load(file, { strict: true });
+```
+
+### Pull complexity downward (don't push flags to every caller)
+
+```javascript
+// BAD — every call site repeats edge handling
+function renderPage(page, { isMobile, isPreview, locale }) {
+  if (isPreview) { /* ... */ }
+  if (isMobile) { /* ... */ }
+  // ...
+}
+
+// GOOD — caller passes intent; module owns the matrix
+function renderPage(page, { viewport, mode, locale }) {
+  return ViewportRenderer.for(viewport, mode).render(page, locale);
+}
+```
+
+### Special-general decomposition (isolate edge cases)
+
+```javascript
+// BAD — core path cluttered with rare branches
+function calculatePrice(cart, user) {
+  if (user.isEmployee && cart.hasGiftCard && cart.region === 'EU') { /* ... */ }
+  // normal pricing buried below
+}
+
+// GOOD — general case stays obvious
+function calculatePrice(cart, user) {
+  const base = priceEngine.quote(cart);
+  return adjustmentRules.apply(base, user, cart);
+}
+```
+
+### Error handling (define away invalid states)
+
+```javascript
+// BAD — half-valid object; callers must tiptoe
+const order = createOrder(items); // may lack shipping
+order.setShipping(address);
+order.submit(); // throws if shipping missing
+
+// GOOD — invalid states unrepresentable
+const order = Order.create(items, shippingAddress);
+await order.submit();
+```
+
+### Combine vs separate (one coherent module)
+
+```javascript
+// BAD — readers jump across shallow files for one idea
+// validate.js, normalize.js, persist.js — each ~5 lines, no real boundary
+
+// GOOD — separation only when it hides a real design decision
+// validation/normalization co-located with the domain type they protect
+class ExportManifest {
+  static parse(raw) { /* validate + normalize here */ }
+}
+```
+
+### Naming (abstraction, not mechanism)
+
+```javascript
+// BAD
+function fetchFromS3AndParseJson(bucket, key) { /* ... */ }
+
+// GOOD
+function loadProjectSnapshot(location) { /* ... */ }
+```
+
+### Comments (contract and why, not obvious what)
+
+```javascript
+// BAD — narrates steps the code already shows
+// Loop through pages and write each file
+for (const page of pages) {
+  await fs.writeFile(path.join(pagesDir, `${page.name}.jsx`), renderPage(page));
+}
+
+// BAD — comment replaces a missing name
+// Convert route to PascalCase component filename
+function r2c(route) { /* ... */ }
+
+// BAD — restates the next line
+// Set quotes to true for HTML attributes
+escapeFor(href, { quotes: true });
+
+// GOOD — names carry the what; comment carries non-obvious domain context
+/** Numeric path segments are Builder route IDs, not page slugs. */
+function routeToComponentName(route) { /* ... */ }
+
+// GOOD — documents an invariant or constraint not visible in signatures
+/** Destination is wiped before bootstrap; valid only on an empty target dir. */
+async function materialize(model, destination) { /* ... */ }
+
+// GOOD — explains a trade-off or external constraint
+/** Does not run npm install — user runs that from README after export. */
+async function bootstrapViteScaffold(destination) { /* ... */ }
+```
+
+When generating or reviewing code, fight complexity directly: deeper modules, simpler interfaces, stronger hiding, fewer special cases.

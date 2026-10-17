@@ -1,0 +1,162 @@
+---
+description: Core coding conventions — English identifiers, DRY, function style, component layout
+alwaysApply: true
+---
+
+# Coding Conventions
+
+## Language
+
+- All **code** must be in **English**: variable names, function names, CSS classes, HTML IDs, file names, comments, component names.
+- **User-facing copy** must come from locale files via next-intl — see [cms-conventions.mdc](cms-conventions.mdc). Do not hardcode titles, labels, buttons, or worded placeholders in TSX/TS. Language-independent glyphs, numerals, and initials may be hardcoded (same rule file).
+
+```tsx
+// ❌ BAD — non-English identifiers or hardcoded UI copy
+<section id="misja">
+const tituloPrincipal = ...
+<h1>Welcome to our platform</h1>
+
+// ✅ GOOD — English identifiers; copy from locale files
+<section id="mission">
+const mainTitle = ...
+const t = useTranslations("Landing.hero");
+<h1>{t("title")}</h1>
+```
+
+## DRY (Don't Repeat Yourself)
+
+- **Within the same file:** Before adding new logic, scan the file for existing helpers, validators, formatters, handlers, or branches that already do the same job. **Reuse or extend them** instead of copying and pasting equivalent code.
+- **Across the codebase:** If the behavior already exists in a shared utility, hook, or component, **import and reuse it** rather than reimplementing the same logic in another module.
+- **Extract repeated logic into functions:** When the same operation appears 2+ times (database queries, validation, formatting, API calls), extract it into a named function with clear parameters and return type.
+  - Place the helper **above** the code that uses it (for readability).
+  - Use descriptive names that indicate what the function does (e.g. `resolveReferralCode`, `setUserReferredBy`, `assignFreeMembership`).
+  - Document with JSDoc comments if the purpose isn't immediately obvious from the name.
+
+```tsx
+// ❌ BAD — duplicate validation in the same file
+const handleSave = () => {
+  if (!email.includes("@")) return;
+  // ...
+};
+const handleBlur = () => {
+  if (!email.includes("@")) setError("Invalid email");
+  // ...
+};
+
+// ✅ GOOD — one helper, reused
+function isValidEmail(value: string) {
+  return value.includes("@");
+}
+```
+
+```tsx
+// ❌ BAD — duplicate database queries
+// In hook A:
+const { rows } = await pool.query(
+  `SELECT id FROM "user" WHERE affiliate_code = $1`,
+  [code],
+);
+const referrerId = rows[0]?.id ?? null;
+
+// In hook B:
+const { rows } = await pool.query(
+  `SELECT id FROM "user" WHERE affiliate_code = $1`,
+  [code],
+);
+const referrerId = rows[0]?.id ?? null;
+
+// ✅ GOOD — extracted into a reusable function
+/**
+ * Resolves a referral code to a referrer user ID.
+ * @returns The referrer's user ID, or null if the code is invalid.
+ */
+async function resolveReferralCode(
+  referralCode: string,
+): Promise<string | null> {
+  const { rows } = await pool.query<{ id: string }>(
+    `SELECT id FROM "user" WHERE affiliate_code = $1`,
+    [referralCode],
+  );
+  return rows[0]?.id ?? null;
+}
+
+// Then in both hooks:
+const referrerId = await resolveReferralCode(code);
+```
+
+## Functions: `function` vs `const fn = () =>`
+
+**Prefer `function name()`** for:
+
+- **Default-exported React components** (pages, layouts, shared components) — clearer names in stacks and React DevTools.
+- **Recursive functions** (the name is in scope inside the body).
+- **Generators** (`function*`) or when you rely on hoisting.
+
+**You may use `const fn = () =>`** for:
+
+- **Event handlers and callbacks** (`onClick`, `onSubmit`, props like `onChange`, `.map()` / `.filter()` callbacks).
+- **Small helpers** defined inside a component or at module level when they are not the file's main exported component.
+- **Inline or narrowly scoped logic** where an arrow reads naturally (e.g. `const formatDate = (d: Date) => ...` next to related code).
+
+**Avoid** mixing styles arbitrarily in one file: if the file's primary export is `function SettingsPage()`, keep local handlers as `const handleSave = () => { ... }` — that pairing is fine.
+
+```tsx
+// ✅ GOOD — main export
+export default function SettingsPage() {
+  const handleSubmit = (e: FormEvent) => {
+    e.preventDefault();
+    // ...
+  };
+  return <form onSubmit={handleSubmit}>...</form>;
+}
+
+// ✅ GOOD — small module helper
+const toCents = (amount: number) => Math.round(amount * 100);
+
+// ✅ GOOD — callback
+items.map((item) => item.id);
+
+// Prefer function for recursion
+function walkTree(node: Node): void {
+  node.children.forEach(walkTree);
+}
+```
+
+## Component structure
+
+- Shared UI: own files under `components/` when reused across pages.
+- Page-only sections: co-locate in the page file unless extracted for reuse.
+- Avoid extra files for one-off sections unless they will be reused.
+
+## Section and container pattern
+
+When `globals.css` defines layout utilities (e.g. section padding, centered container, grid helpers), **reuse those classes and tokens** instead of reimplementing the same layout in component CSS. Read `globals.css` for what exists — do not assume class names.
+
+```tsx
+// ✅ GOOD — reuse globals that exist in globals.css
+<section className="section">
+  <div className="container">{/* page content */}</div>
+</section>
+
+// ✅ GOOD — co-located CSS with tokens when no global utility fits
+<section className="pricing-section">...</section>
+```
+
+## REM-based sizing
+
+**Root: 10px** → `1rem = 10px`.
+
+- Use **rem** for font sizes, spacing, widths/heights that should scale.
+- Use **px** for border radius (except tokens), 1px borders, shadows, breakpoints.
+
+## Buttons / interactive elements
+
+- Inert buttons: `<button type="button">` with no fake `onClick` / `console.log`.
+
+## Related rules
+
+- **CSS and styling:** [ui-primitives-first.mdc](ui-primitives-first.mdc)
+- **Responsive layout:** [mobile-first.mdc](mobile-first.mdc)
+- **User-facing text / i18n:** [cms-conventions.mdc](cms-conventions.mdc)
+- **Design files → React:** [pen-design.mdc](pen-design.mdc) and [ui-primitives-first.mdc](ui-primitives-first.mdc)
+- **Server API:** [server-api.mdc](server-api.mdc)

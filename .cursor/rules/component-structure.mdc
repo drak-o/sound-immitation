@@ -1,0 +1,49 @@
+---
+description: Reusable component folder structure — index.tsx + styles.css
+alwaysApply: true
+globs:
+  - web/components/primitives/**
+  - web/components/modals/**
+---
+
+# Component File Structure
+
+Every reusable component under `web/components/primitives/` and `web/components/modals/` lives in its own PascalCase folder with exactly two files:
+
+- `index.tsx` — all component logic, state, and JSX (default export)
+- `styles.css` — all styles for that component (layout, surfaces, and component-specific chrome), imported inside `index.tsx`
+
+```
+// ❌ BAD — separate component file + re-export barrel
+web/components/primitives/Button/
+  Button.tsx       ← logic
+  index.ts         ← export { default } from "./Button"
+  styles.css
+
+// ❌ BAD — shared semiglobal stylesheet for multiple components
+web/components/primitives/styles.css
+
+// ✅ GOOD — logic and styles colocated per component
+web/components/primitives/Button/
+  index.tsx        ← logic + JSX, default export
+  styles.css       ← button chrome + any Button-only layout
+```
+
+Import by folder path:
+
+```tsx
+import Button from "@/components/primitives/Button";
+import AuthModal from "@/components/modals/AuthModal";
+```
+
+## Styling ownership
+
+- **No** shared `web/components/primitives/styles.css`.
+- Button styles → `Button/styles.css`. Badge styles → `Badge/styles.css`. Nav link styles → `NavBar/styles.css`. And so on.
+- Design tokens and default `h1`–`h6` / `body` rules → [`web/app/globals.css`](web/app/globals.css) only.
+
+Follow [ui-primitives-first.mdc](ui-primitives-first.mdc) for tokens, semantic tags, and styling priority.
+
+## Modals
+
+Modal components follow the same folder pattern. See also [modal-structure.mdc](modal-structure.mdc).

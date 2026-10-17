@@ -1,0 +1,155 @@
+---
+description: Server API security, admin access, and endpoint naming conventions
+alwaysApply: true
+globs:
+  - server/**
+---
+
+# Server API Conventions
+
+Apply these rules when working under `server/`. Paths and middleware names below match the intended ProFX-style layout — **read the repo** (`server.ts`, route files, `adminMiddleware`) and follow what is actually implemented.
+
+## Admin access
+
+- **Do not** use a shared `ADMIN_SECRET` or `X-Admin-Secret` header for admin API routes.
+- Admins are rows in the **`admin`** table (`db-scripts/008_admins.sql`): `user_id` references `"user"(id)` (unique), `level` is an integer (default `1`, **reserved for future RBAC** — do not branch on it yet).
+- **No HTTP endpoints** create or remove admins; grant/revoke access with SQL (e.g. `INSERT INTO admin (user_id, level) VALUES ($1, 1)`).
+- **`adminMiddleware`** (`server/src/utils/adminMiddleware.ts`) runs **after** **`jwtMiddleware`**. It checks that `req.user.id` has a matching row in `admin`. If not, respond `403`.
+- Admin routes require the same **`X-API-Key`** as other `/api/*` routes, plus a valid JWT for a user who is listed in `admin`.
+- When adding new admin-only handlers, reuse **`adminMiddleware`**; do not duplicate the query or invent a second token.
+
+## API endpoint security
+
+**IMPORTANT: No public API endpoints except `/health`.**
+
+All `/api/*` endpoints must require authentication:
+
+1. **API Key Protection** (global):
+   - ALL `/api/*` routes require `X-API-Key` header (applied in `server.ts` via `apiKeyMiddleware`)
+   - Never create public API endpoints that bypass this requirement
+
+2. **User Routes** (JWT required):
+   - Apply `jwtMiddleware` to protect user-specific endpoints
+   - Use `req.user.id` from JWT session (never trust user-supplied IDs from params/body for authorization)
+   - Pattern: `router.use(jwtMiddleware)` at the top of user route sections
+
+3. **Admin Routes** (JWT + admin verification):
+   - Apply both `jwtMiddleware` AND `adminMiddleware`
+   - Pattern: Create separate admin router, apply `adminMiddleware`, then mount as subrouter
+
+**Endpoint structure example:**
+
+```typescript
+const myRouter = Router();
+
+// All routes require JWT
+myRouter.use(jwtMiddleware);
+
+// User endpoints (JWT only)
+myRouter.get("/me", async (req, res) => {
+  const userId = req.user!.id; // ✅ From JWT
+  // ...
+});
+
+// Admin endpoints (JWT + admin)
+const adminRouter = Router();
+adminRouter.use(adminMiddleware);
+adminRouter.get("/all", async (req, res) => {
+  // Admin-only logic
+});
+myRouter.use("/admin", adminRouter);
+
+export default myRouter;
+```
+
+**Never:**
+
+- ❌ Create public API endpoints (except `/health`)
+- ❌ Use user-supplied IDs from `req.params` or `req.body` for authorization
+- ❌ Skip JWT middleware for "convenience"
+- ❌ Implement custom authentication schemes
+
+## API endpoint naming conventions
+
+**User-specific endpoints must use `/me` or `:userId` pattern:**
+
+1. **`/me` for authenticated user's own data** (JWT-protected):
+   - Use when the endpoint operates on the authenticated user's data
+   - Always use `req.user.id` from JWT session
+   - Pattern: `GET /api/resource/me`, `PUT /api/resource/me`, `DELETE /api/resource/me`
+   - Examples:
+     - `GET /api/bio/me` - get my bio
+     - `PUT /api/wallet/me/withdraw` - create withdrawal for my account
+     - `GET /api/affiliates/me/network` - get my affiliate network
+
+2. **`:userId` for admin access to any user's data** (admin-protected):
+   - Use when admins need to access or modify any user's data
+   - Always validate `userId` exists before operating on it
+   - Pattern: `GET /api/admin/users/:userId`, `PUT /api/admin/users/:userId`
+   - Examples:
+     - `GET /api/admin/users/:userId` - admin views any user
+     - `PUT /api/admin/wallet/:userId/balance` - admin adjusts user's balance
+     - `GET /api/admin/affiliates/:userId/network` - admin views user's network
+
+3. **`:userId` for viewing other users' public/shared data** (JWT-protected):
+   - Use when authenticated users can view (but not modify) other users' data
+   - Read-only access to public or shared information
+   - Examples:
+     - `GET /api/bio/:userId` - view another user's bio profile
+     - `GET /api/users/:userId/public-profile` - view another user's public info
+
+**Naming rules:**
+
+```typescript
+// ✅ GOOD - User's own data
+GET    /api/bio/me              // Get my bio
+PUT    /api/bio/me              // Update my bio
+GET    /api/wallet/me/balance   // Get my balance
+POST   /api/wallet/me/withdraw  // Create my withdrawal
+
+// ✅ GOOD - View other users' data (JWT required, read-only)
+GET    /api/bio/:userId         // View another user's bio
+GET    /api/users/:userId/stats // View another user's public stats
+
+// ✅ GOOD - Admin access to any user
+GET    /api/admin/users/:userId           // Admin views any user
+PUT    /api/admin/users/:userId           // Admin updates any user
+DELETE /api/admin/wallet/:userId/ledger   // Admin manages user's wallet
+
+// ❌ BAD - Ambiguous or insecure
+GET    /api/bio/user/:userId    // Should be /me or /:userId depending on use case
+PUT    /api/bio/:userId         // User can't modify others' bios (IDOR vulnerability)
+GET    /api/wallet/:userId      // User shouldn't access others' wallets
+```
+
+**Authorization pattern:**
+
+```typescript
+// ✅ User endpoint - uses JWT user ID
+myRouter.get("/me", async (req, res) => {
+  const userId = req.user!.id; // From JWT
+  const data = await getUserData(userId);
+  res.json({ data });
+});
+
+// ✅ View others - uses param but read-only
+myRouter.get("/:userId", async (req, res) => {
+  const { userId } = req.params;
+  const publicData = await getPublicUserData(userId);
+  res.json({ publicData });
+});
+
+// ✅ Admin endpoint - uses param with admin verification
+adminRouter.put("/:userId", async (req, res) => {
+  const { userId } = req.params;
+  // Admin can modify any user
+  const updated = await updateUserData(userId, req.body);
+  res.json({ updated });
+});
+
+// ❌ WRONG - allows users to modify others' data
+myRouter.put("/:userId", async (req, res) => {
+  const { userId } = req.params; // User-controlled!
+  await updateUserData(userId, req.body); // IDOR vulnerability
+});
+```

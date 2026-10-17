@@ -1,0 +1,41 @@
+---
+description: Never create .md documentation files unless explicitly requested
+alwaysApply: true
+---
+
+# Do Not Create Markdown Files
+
+**NEVER** create `.md` files (documentation, README, changelog, etc.) unless the user explicitly asks for them.
+
+## When Not to Create .md Files
+
+- ❌ After implementing features (no CHANGELOG.md, FEATURES.md, etc.)
+- ❌ For documentation (no API_DOCS.md, GUIDE.md, etc.)
+- ❌ For configuration notes (no SETUP.md, CONFIG.md, etc.)
+- ❌ For testing instructions (no TESTING.md, etc.)
+
+## When .md Files Are OK
+
+- ✅ User explicitly says "create a README" or "write documentation"
+- ✅ Updating existing .md files that are already in the project
+- ✅ User asks "can you document this?"
+
+## What to Do Instead
+
+Instead of creating documentation files:
+
+- Add comments in code when necessary (but avoid obvious comments)
+- Update existing documentation if it exists
+- Explain verbally to the user in your response
+- Wait for the user to ask for documentation
+
+## Examples
+
+```typescript
+// ❌ BAD: Don't do this
+// After implementing auth, create AUTH_SETUP.md to explain the changes
+
+// ✅ GOOD: Just explain it to the user
+// "I've implemented authentication with Better Auth. The session cookies
+// are now configured for cross-subdomain support..."
+```

@@ -1,0 +1,44 @@
+---
+description: Mobile-first responsive CSS and layout conventions
+alwaysApply: true
+globs:
+  - "**/*.css"
+  - web/**/*.tsx
+---
+
+# Mobile-first responsive UI
+
+## Default viewport
+
+- **Write base styles for the narrowest layout first** (typically a single-column phone view). Layout, typography, and spacing should work without horizontal scrolling before any breakpoint.
+
+## Media queries
+
+- **Prefer only** `@media (min-width: …)` — add complexity as the viewport **grows**, not as it shrinks.
+- Avoid `@media (max-width: …)` for new component/page CSS unless you are overriding third-party styles or fixing a documented legacy exception.
+- **Standard breakpoints:** `640px`, `768px`, `1024px`, `1280px`.
+
+## Order in a stylesheet
+
+1. Base rules (mobile).
+2. Then `@media (min-width: 640px)` if needed.
+3. Then `768px`, `1024px`, `1280px` as needed.
+
+## Layout patterns
+
+- **Grids:** default to one column (`1fr`); add columns only at `min-width` breakpoints.
+- **Flex:** default to wrapping or column where appropriate; enhance row alignment at larger breakpoints.
+- **Fixed heights / `min-height`:** prefer `auto` or content-driven sizing on small screens; add `min-height` at `lg`+ only when the design requires it.
+
+## Typography and spacing
+
+- Use **smaller type, tighter padding, and smaller gaps** in the base layer; scale up with `min-width` blocks (`font-size`, `padding`, `gap`, etc.).
+- Prefer **fluid values** (`clamp()`, `%`, `max-width`) or tokens over fixed pixel widths for full-width regions.
+
+## Tailwind (when used)
+
+- Use **`min-*` / unprefixed mobile-first utilities** (`md:`, `lg:`) instead of `max-*` breakpoint variants for new layout.
+
+## Reference
+
+- When auditing existing styles, look for co-located `styles.css` files that already follow base-then-`min-width` ordering and mirror that pattern.
