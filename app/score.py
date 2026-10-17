@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import math
-
 import numpy as np
 
 from app.audio import Clip, Take, resample
@@ -12,7 +10,8 @@ _TARGET_RATE = 16000
 _FRAME_SAMPLES = int(_TARGET_RATE * 0.025)
 _HOP_SAMPLES = int(_TARGET_RATE * 0.010)
 _BAND_COUNT = 8
-_BAND_RATIO = 0.2
+# 10 ms frames. 80 ms of warp: a small slip still matches, a late start does not.
+_SLACK_FRAMES = 8
 # Eight log-spaced bands from 80 Hz to 7.6 kHz. A tap fills every band.
 _BAND_EDGES_HZ = np.geomspace(80.0, 7600.0, _BAND_COUNT + 1)
 _BIN_FREQS_HZ = np.fft.rfftfreq(_FRAME_SAMPLES, d=1.0 / _TARGET_RATE)
@@ -36,45 +35,12 @@ class Scorer:
         recorded = _frame_spectra(
             resample(take.samples, take.sample_rate, _TARGET_RATE)
         )
-        # Drop silent edges on the take only. 0.1% of its loudest frame is
-        # silence. Keep an edge the reference shares, so a clip still matches
-        # itself; drop extra silence before the reference has started.
-        reference_energy = reference.sum(axis=1)
-        recorded_energy = recorded.sum(axis=1)
-        recorded_peak = float(recorded_energy.max()) if recorded_energy.size else 0.0
-        reference_peak = float(reference_energy.max()) if reference_energy.size else 0.0
-        if recorded_peak <= 1e-12:
-            recorded = recorded[:0]
-        else:
-            take_quiet = recorded_energy < recorded_peak * 0.001
-            clip_quiet = (
-                reference_energy < reference_peak * 0.001
-                if reference_peak > 1e-12
-                else np.ones(reference_energy.shape[0], dtype=bool)
-            )
-            start = 0
-            while (
-                start < recorded.shape[0]
-                and take_quiet[start]
-                and (start >= clip_quiet.shape[0] or not clip_quiet[start])
-            ):
-                start += 1
-            end = recorded.shape[0]
-            while end > start:
-                ref_index = clip_quiet.shape[0] - (recorded.shape[0] - (end - 1))
-                reference_is_quiet = (
-                    0 <= ref_index < clip_quiet.shape[0] and clip_quiet[ref_index]
-                )
-                if not take_quiet[end - 1] or reference_is_quiet:
-                    break
-                end -= 1
-            recorded = recorded[start:end]
         reference = _band_distribution(reference)
         recorded = _band_distribution(recorded)
         if recorded.shape[0] == 0 or reference.shape[0] == 0:
             print("similarity=0.0000 percent=0.0")
             return 0.0
-        similarity = _dtw_similarity(reference, recorded, _BAND_RATIO)
+        similarity = _dtw_similarity(reference, recorded)
         percent = round(max(0.0, similarity) * 100, 1)
         print(f"similarity={similarity:.4f} percent={percent}")
         return percent
@@ -112,31 +78,31 @@ def _band_distribution(spectra: np.ndarray) -> np.ndarray:
     return distributed
 
 
-def _cosine_similarity(left: np.ndarray, right: np.ndarray) -> float:
+def _band_overlap(left: np.ndarray, right: np.ndarray) -> float:
+    """Share of each frame's band energy that falls in the same bands.
+
+    A breath covers every band. Cosine similarity still counts that as a
+    match when the clip only uses some of them.
+    """
     left_norm = float(np.linalg.norm(left))
     right_norm = float(np.linalg.norm(right))
     # Two silent frames are the same shape. One silent frame matches nothing.
     if left_norm < 1e-12 or right_norm < 1e-12:
         return 1.0 if left_norm < 1e-12 and right_norm < 1e-12 else 0.0
-    return float(np.dot(left, right) / (left_norm * right_norm))
+    return float(np.minimum(left, right).sum())
 
 
-def _dtw_similarity(
-    reference: np.ndarray, take: np.ndarray, band_ratio: float
-) -> float:
-    """Mean cosine similarity along a 20% Sakoe-Chiba band.
+def _dtw_similarity(reference: np.ndarray, take: np.ndarray) -> float:
+    """Mean band overlap along an 80 ms Sakoe-Chiba band.
 
-    The band is widened to the diagonal step so a much shorter take can still
-    reach the corner. Local cost is the cosine distance between 8-band frames.
+    The recording stays on the clip's timeline. Local cost is the unshared
+    fraction of two 8-band frames.
     """
     ref = np.asarray(reference, dtype=np.float64)
     rec = np.asarray(take, dtype=np.float64)
     row_count = ref.shape[0]
     column_count = rec.shape[0]
-    band = max(1, int(round(band_ratio * max(row_count, column_count))))
-    band = max(
-        band, math.ceil(max(row_count, column_count) / min(row_count, column_count))
-    )
+    band = _SLACK_FRAMES
     cost = np.full((row_count + 1, column_count + 1), np.inf, dtype=np.float64)
     cost[0, 0] = 0.0
     for row in range(1, row_count + 1):
@@ -144,7 +110,7 @@ def _dtw_similarity(
         start = max(1, center - band)
         end = min(column_count, center + band)
         for column in range(start, end + 1):
-            local = 1.0 - _cosine_similarity(ref[row - 1], rec[column - 1])
+            local = 1.0 - _band_overlap(ref[row - 1], rec[column - 1])
             cost[row, column] = local + min(
                 cost[row - 1, column],
                 cost[row, column - 1],
@@ -154,7 +120,7 @@ def _dtw_similarity(
     column = column_count
     similarities: list[float] = []
     while row > 0 and column > 0:
-        similarities.append(_cosine_similarity(ref[row - 1], rec[column - 1]))
+        similarities.append(_band_overlap(ref[row - 1], rec[column - 1]))
         steps = (
             (cost[row - 1, column - 1], row - 1, column - 1),
             (cost[row - 1, column], row - 1, column),
