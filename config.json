@@ -6,8 +6,6 @@
   "threshold_percent": 70,
   "countdown_seconds": 3,
   "overlay_port": 8765,
-  "input_device": null,
-  "output_device": null,
-  "panic_chord": "ctrl+alt+f12",
+  "panic_shortcut": "ctrl+alt+f12",
   "extra_patterns": []
 }

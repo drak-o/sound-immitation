@@ -39,14 +39,37 @@ class ChatWatch:
         self._identity: tuple[int, int, int] | None = None
         self._pending = b""
         self._announced_wait = False
-        self._seek_end()
+        self.drain()
 
     def next_chat(self) -> str:
         while True:
-            text = self._poll_chat()
+            # Drain lines already buffered before touching the file again.
+            if b"\n" not in self._pending:
+                if not self._path.is_file():
+                    self._offset = 0
+                    self._identity = None
+                    self._pending = b""
+                else:
+                    stat = self._path.stat()
+                    identity = (stat.st_dev, stat.st_ino, stat.st_ctime_ns)
+                    if identity != self._identity or stat.st_size < self._offset:
+                        self._identity = identity
+                        self._offset = 0
+                        self._pending = b""
+                    if stat.st_size > self._offset:
+                        # Close before returning so Minecraft can rename latest.log.
+                        with self._path.open("rb") as handle:
+                            handle.seek(self._offset)
+                            chunk = handle.read()
+                        self._offset += len(chunk)
+                        self._pending += chunk
+            if b"\n" not in self._pending:
+                time.sleep(0.1)
+                continue
+            raw, self._pending = self._pending.split(b"\n", 1)
+            text = extract_chat(raw.decode("utf-8", errors="replace").rstrip("\r"))
             if text is not None:
                 return text
-            time.sleep(0.1)
 
     def wait_for_death(self, matcher: DeathMatcher) -> str:
         while True:
@@ -55,44 +78,7 @@ class ChatWatch:
                 return text
 
     def drain(self) -> None:
-        self._seek_end()
-
-    def _poll_chat(self) -> str | None:
-        while True:
-            line = self._read_line()
-            if line is None:
-                return None
-            text = extract_chat(line)
-            if text is not None:
-                return text
-
-    def _read_line(self) -> str | None:
-        if not self._path.is_file():
-            self._offset = 0
-            self._identity = None
-            self._pending = b""
-            return None
-        stat = self._path.stat()
-        identity = (stat.st_dev, stat.st_ino, stat.st_ctime_ns)
-        if identity != self._identity or stat.st_size < self._offset:
-            self._identity = identity
-            self._offset = 0
-            self._pending = b""
-        if stat.st_size > self._offset:
-            with self._path.open("rb") as handle:
-                handle.seek(self._offset)
-                chunk = handle.read()
-            self._offset += len(chunk)
-            self._pending += chunk
-        return self._pop_line()
-
-    def _pop_line(self) -> str | None:
-        if b"\n" not in self._pending:
-            return None
-        raw, self._pending = self._pending.split(b"\n", 1)
-        return raw.decode("utf-8", errors="replace").rstrip("\r")
-
-    def _seek_end(self) -> None:
+        """Skip to the end so deaths already in the file are not replayed."""
         while not self._path.is_file():
             if not self._announced_wait:
                 print(f"Waiting for {self._path}")

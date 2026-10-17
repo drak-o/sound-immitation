@@ -1,4 +1,4 @@
-"""Swallow keyboard and mouse input until the panic chord."""
+"""Swallow keyboard and mouse input until the panic shortcut."""
 
 from __future__ import annotations
 
@@ -11,12 +11,14 @@ WH_KEYBOARD_LL = 13
 WH_MOUSE_LL = 14
 WM_QUIT = 0x0012
 
+# A low-level hook reports the left or right key, not the generic Ctrl/Alt/Shift code.
 _MODIFIER_CODES = {
-    "ctrl": 0x11,
-    "control": 0x11,
-    "alt": 0x12,
-    "shift": 0x10,
+    "ctrl": (0x11, 0xA2, 0xA3),
+    "control": (0x11, 0xA2, 0xA3),
+    "alt": (0x12, 0xA4, 0xA5),
+    "shift": (0x10, 0xA0, 0xA1),
 }
+_KEY_UP = 0x80
 
 _NAMED_KEYS = {
     "esc": 0x1B,
@@ -36,25 +38,59 @@ HOOKPROC = ctypes.WINFUNCTYPE(LRESULT, ctypes.c_int, wintypes.WPARAM, wintypes.L
 user32 = ctypes.WinDLL("user32", use_last_error=True)
 kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
 
-user32.SetWindowsHookExW.argtypes = [ctypes.c_int, HOOKPROC, wintypes.HINSTANCE, wintypes.DWORD]
+user32.SetWindowsHookExW.argtypes = [
+    ctypes.c_int,
+    HOOKPROC,
+    wintypes.HINSTANCE,
+    wintypes.DWORD,
+]
 user32.SetWindowsHookExW.restype = wintypes.HHOOK
 user32.UnhookWindowsHookEx.argtypes = [wintypes.HHOOK]
 user32.UnhookWindowsHookEx.restype = wintypes.BOOL
-user32.CallNextHookEx.argtypes = [wintypes.HHOOK, ctypes.c_int, wintypes.WPARAM, wintypes.LPARAM]
+user32.CallNextHookEx.argtypes = [
+    wintypes.HHOOK,
+    ctypes.c_int,
+    wintypes.WPARAM,
+    wintypes.LPARAM,
+]
 user32.CallNextHookEx.restype = LRESULT
-user32.GetMessageW.argtypes = [ctypes.POINTER(wintypes.MSG), wintypes.HWND, wintypes.UINT, wintypes.UINT]
+user32.GetMessageW.argtypes = [
+    ctypes.POINTER(wintypes.MSG),
+    wintypes.HWND,
+    wintypes.UINT,
+    wintypes.UINT,
+]
 user32.GetMessageW.restype = ctypes.c_int
-user32.PeekMessageW.argtypes = [ctypes.POINTER(wintypes.MSG), wintypes.HWND, wintypes.UINT, wintypes.UINT, wintypes.UINT]
+user32.PeekMessageW.argtypes = [
+    ctypes.POINTER(wintypes.MSG),
+    wintypes.HWND,
+    wintypes.UINT,
+    wintypes.UINT,
+    wintypes.UINT,
+]
 user32.PeekMessageW.restype = wintypes.BOOL
 user32.TranslateMessage.argtypes = [ctypes.POINTER(wintypes.MSG)]
 user32.TranslateMessage.restype = wintypes.BOOL
 user32.DispatchMessageW.argtypes = [ctypes.POINTER(wintypes.MSG)]
 user32.DispatchMessageW.restype = LRESULT
-user32.PostThreadMessageW.argtypes = [wintypes.DWORD, wintypes.UINT, wintypes.WPARAM, wintypes.LPARAM]
+user32.PostThreadMessageW.argtypes = [
+    wintypes.DWORD,
+    wintypes.UINT,
+    wintypes.WPARAM,
+    wintypes.LPARAM,
+]
 user32.PostThreadMessageW.restype = wintypes.BOOL
-user32.GetAsyncKeyState.argtypes = [ctypes.c_int]
-user32.GetAsyncKeyState.restype = ctypes.c_short
 kernel32.GetCurrentThreadId.restype = wintypes.DWORD
+
+
+class _KeyEvent(ctypes.Structure):
+    _fields_ = [
+        ("vkCode", wintypes.DWORD),
+        ("scanCode", wintypes.DWORD),
+        ("flags", wintypes.DWORD),
+        ("time", wintypes.DWORD),
+        ("dwExtraInfo", ctypes.c_size_t),
+    ]
 
 
 def _key_code(name: str) -> int:
@@ -66,17 +102,19 @@ def _key_code(name: str) -> int:
             return 0x70 + number - 1
     if name in _NAMED_KEYS:
         return _NAMED_KEYS[name]
-    raise SystemExit(f"Unknown key in panic_chord: {name}")
+    raise SystemExit(f"Unknown key in panic_shortcut: {name}")
 
 
-def _parse_chord(chord: str) -> tuple[tuple[int, ...], int]:
-    parts = [part.strip().lower() for part in chord.split("+") if part.strip()]
+def _parse_shortcut(shortcut: str) -> tuple[tuple[tuple[int, ...], ...], int]:
+    parts = [part.strip().lower() for part in shortcut.split("+") if part.strip()]
     if not parts:
-        raise SystemExit("panic_chord is empty.")
+        raise SystemExit("panic_shortcut is empty.")
     try:
         modifiers = tuple(_MODIFIER_CODES[part] for part in parts[:-1])
     except KeyError as error:
-        raise SystemExit(f"Unknown modifier in panic_chord: {error.args[0]}") from error
+        raise SystemExit(
+            f"Unknown modifier in panic_shortcut: {error.args[0]}"
+        ) from error
     return modifiers, _key_code(parts[-1])
 
 
@@ -86,22 +124,26 @@ class InputLock:
         self._thread_id: int | None = None
         self._keyboard_hook = None
         self._mouse_hook = None
-        self._modifiers: tuple[int, ...] = ()
+        self._modifiers: tuple[tuple[int, ...], ...] = ()
         self._key = 0
+        self._held: set[int] = set()
         self._on_panic = None
         self._error: OSError | None = None
         self._keyboard_hook_proc = HOOKPROC(self._keyboard_proc)
         self._mouse_hook_proc = HOOKPROC(self._mouse_proc)
         atexit.register(self.stop)
 
-    def start(self, panic_chord: str, on_panic) -> None:
+    def start(self, panic_shortcut: str, on_panic) -> None:
         if self._thread is not None:
             self.stop()
-        self._modifiers, self._key = _parse_chord(panic_chord)
+        self._modifiers, self._key = _parse_shortcut(panic_shortcut)
+        self._held.clear()
         self._on_panic = on_panic
         self._error = None
         ready = threading.Event()
-        self._thread = threading.Thread(target=self._pump, args=(ready,), name="input-lock", daemon=True)
+        self._thread = threading.Thread(
+            target=self._pump, args=(ready,), name="input-lock", daemon=True
+        )
         self._thread.start()
         if not ready.wait(timeout=3):
             raise SystemExit("Input lock did not start.")
@@ -126,8 +168,12 @@ class InputLock:
         self._thread_id = int(kernel32.GetCurrentThreadId())
         message = wintypes.MSG()
         user32.PeekMessageW(ctypes.byref(message), None, 0, 0, 0)
-        self._keyboard_hook = user32.SetWindowsHookExW(WH_KEYBOARD_LL, self._keyboard_hook_proc, None, 0)
-        self._mouse_hook = user32.SetWindowsHookExW(WH_MOUSE_LL, self._mouse_hook_proc, None, 0)
+        self._keyboard_hook = user32.SetWindowsHookExW(
+            WH_KEYBOARD_LL, self._keyboard_hook_proc, None, 0
+        )
+        self._mouse_hook = user32.SetWindowsHookExW(
+            WH_MOUSE_LL, self._mouse_hook_proc, None, 0
+        )
         if not self._keyboard_hook or not self._mouse_hook:
             self._error = ctypes.WinError(ctypes.get_last_error())
             self._unhook()
@@ -151,11 +197,19 @@ class InputLock:
         if n_code < 0:
             return user32.CallNextHookEx(self._keyboard_hook, n_code, w_param, l_param)
         try:
-            if self._is_panic():
-                callback = self._on_panic
-                if callback is not None:
-                    callback()
-                return user32.CallNextHookEx(self._keyboard_hook, n_code, w_param, l_param)
+            event = ctypes.cast(l_param, ctypes.POINTER(_KeyEvent)).contents
+            vk = int(event.vkCode)
+            if event.flags & _KEY_UP:
+                self._held.discard(vk)
+            else:
+                self._held.add(vk)
+                if self._is_panic():
+                    callback = self._on_panic
+                    if callback is not None:
+                        callback()
+                    return user32.CallNextHookEx(
+                        self._keyboard_hook, n_code, w_param, l_param
+                    )
         except Exception:
             return 1
         return 1
@@ -166,6 +220,8 @@ class InputLock:
         return 1
 
     def _is_panic(self) -> bool:
-        if not user32.GetAsyncKeyState(self._key) & 0x8000:
+        if self._key not in self._held:
             return False
-        return all(user32.GetAsyncKeyState(modifier) & 0x8000 for modifier in self._modifiers)
+        return all(
+            any(code in self._held for code in group) for group in self._modifiers
+        )

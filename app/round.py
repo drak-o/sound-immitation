@@ -5,14 +5,13 @@ from __future__ import annotations
 import threading
 import time
 
-from app.audio import AudioSession, Clip
+from app.audio import OVERLAY_COLUMN_COUNT, AudioSession, Clip
 from app.config import Config
 from app.input_lock import InputLock
 from app.overlay_server import OverlayHub
 from app.score import Scorer
 
 _RESULT_HOLD_SECONDS = 1.5
-_COLUMNS = 400
 
 
 class RoundController:
@@ -33,7 +32,7 @@ class RoundController:
     def run_demo(self) -> None:
         abort = threading.Event()
         try:
-            clip = self._audio.pick_random(self._config.sounds_dir)
+            clip = self._audio.pick_random()
             percent = self._one_take(clip, 1, abort)
             print(f"passed={percent >= self._config.threshold_percent}")
             self._hold(abort)
@@ -42,9 +41,9 @@ class RoundController:
 
     def run_locked(self) -> None:
         abort = threading.Event()
-        self._lock.start(self._config.panic_chord, abort.set)
+        self._lock.start(self._config.panic_shortcut, abort.set)
         try:
-            clip = self._audio.pick_random(self._config.sounds_dir)
+            clip = self._audio.pick_random()
             attempt = 1
             while not abort.is_set():
                 percent = self._one_take(clip, attempt, abort)
@@ -69,7 +68,7 @@ class RoundController:
                 "attempt": attempt,
             }
         )
-        self._audio.play(clip, abort)
+        self._audio.play(clip.samples, clip.sample_rate, abort)
         if abort.is_set():
             return 0.0
         self._audio.countdown(
@@ -79,7 +78,9 @@ class RoundController:
         )
         if abort.is_set():
             return 0.0
-        self._hub.publish({"type": "recording", "livePeaks": [None] * _COLUMNS})
+        self._hub.publish(
+            {"type": "recording", "livePeaks": [None] * OVERLAY_COLUMN_COUNT}
+        )
 
         def on_peaks(peaks: list[float | None]) -> None:
             self._hub.publish({"type": "recording", "livePeaks": peaks})

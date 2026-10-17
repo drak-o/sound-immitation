@@ -1,0 +1,41 @@
+---
+description: Inline a function that is only used once in the same file
+alwaysApply: true
+---
+
+# Inline single-use functions
+
+A function used once in the same file is inlined at that call site. The inlined block gets a comment saying what the number or the step is for.
+
+```python
+# BAD — named only to be called once
+def _chunk_size(rate: int) -> int:
+    return max(1, int(rate * 0.05))
+
+frames = stream.read(_chunk_size(rate))
+
+# GOOD — the number stays next to the read, with why it exists
+# 0.05 seconds of audio per read. Abort is checked 20 times a second.
+frames = stream.read(max(1, int(rate * 0.05)))
+```
+
+A one-line wrapper is always inlined.
+
+```python
+# BAD — the method exists only to forward the call
+def play(self, clip, abort):
+    self._play(clip.samples, clip.sample_rate, abort)
+
+# GOOD — the caller uses the playback loop
+self.play(clip.samples, clip.sample_rate, abort)
+```
+
+A real algorithm that is called once stays named. Band spectra, DTW, and shortcut key parsing are algorithms, not wrappers.
+
+```python
+# GOOD — one caller, but the name is the algorithm
+def _dtw_similarity(reference, take, band_ratio):
+    ...
+
+similarity = _dtw_similarity(reference, recorded, 0.2)
+```

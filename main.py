@@ -14,21 +14,26 @@ from app.deaths import DeathMatcher
 
 class App:
     def run(self) -> None:
-        parser = argparse.ArgumentParser(description="Play a sound when you die in Minecraft and record an imitation.")
-        parser.add_argument("--listen", action="store_true", help="Print chat lines as death or ignore.")
-        parser.add_argument("--demo", action="store_true", help="Play one random clip, count down, record, and score.")
-        parser.add_argument("--list-devices", action="store_true", help="Print audio input and output devices.")
-        parser.add_argument("--lock-test", action="store_true", help="Lock input for 5 seconds, or until the panic chord.")
+        parser = argparse.ArgumentParser(
+            description="Play a sound when you die in Minecraft and record an imitation."
+        )
+        parser.add_argument(
+            "--listen", action="store_true", help="Print chat lines as death or ignore."
+        )
+        parser.add_argument(
+            "--demo",
+            action="store_true",
+            help="Play one random clip, count down, record, and score.",
+        )
+        parser.add_argument(
+            "--lock-test",
+            action="store_true",
+            help="Lock input for 5 seconds, or until the panic shortcut.",
+        )
         args = parser.parse_args()
-        selected = sum(bool(flag) for flag in (args.listen, args.demo, args.list_devices, args.lock_test))
+        selected = sum(bool(flag) for flag in (args.listen, args.demo, args.lock_test))
         if selected > 1:
-            parser.error("Choose only one of --listen, --demo, --list-devices, or --lock-test.")
-
-        if args.list_devices:
-            from app.audio import AudioSession
-
-            AudioSession.list_devices()
-            return
+            parser.error("Choose only one of --listen, --demo, or --lock-test.")
 
         config = Config.load()
         if args.lock_test:
@@ -75,8 +80,10 @@ class App:
 
         lock = InputLock()
         abort = threading.Event()
-        print(f"Input locked for 5 seconds. Press {config.panic_chord} to release sooner.")
-        lock.start(config.panic_chord, abort.set)
+        print(
+            f"Input locked for 5 seconds. Press {config.panic_shortcut} to release sooner."
+        )
+        lock.start(config.panic_shortcut, abort.set)
         try:
             deadline = time.monotonic() + 5
             while time.monotonic() < deadline and not abort.is_set():
@@ -92,7 +99,7 @@ class App:
         from app.round import RoundController
         from app.score import Scorer
 
-        audio = AudioSession(config.input_device, config.output_device, config.countdown_sound)
+        audio = AudioSession(config.sounds_dir, config.countdown_sound)
         hub = OverlayHub(ROOT / "overlay")
         hub.start(config.overlay_port)
         return RoundController(config, audio, Scorer(), hub, InputLock())

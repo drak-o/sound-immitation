@@ -41,12 +41,16 @@ class OverlayHub:
     def start(self, port: int) -> None:
         logging.getLogger("websockets.server").setLevel(logging.WARNING)
         self._loop = asyncio.new_event_loop()
-        self._thread = threading.Thread(target=self._run, args=(port,), name="overlay", daemon=True)
+        self._thread = threading.Thread(
+            target=self._run, args=(port,), name="overlay", daemon=True
+        )
         self._thread.start()
         if not self._ready.wait(timeout=5):
             raise SystemExit(f"Overlay did not start on port {port}.")
         if self._start_error is not None:
-            raise SystemExit(f"Overlay did not start on port {port}: {self._start_error}")
+            raise SystemExit(
+                f"Overlay did not start on port {port}: {self._start_error}"
+            )
 
     def publish(self, message: dict) -> None:
         if self._loop is None:
@@ -65,13 +69,21 @@ class OverlayHub:
         elif kind == "reference":
             self._history = [message]
         elif kind == "countdown":
-            self._history = [item for item in self._history if item.get("type") == "reference"]
+            self._history = [
+                item for item in self._history if item.get("type") == "reference"
+            ]
             self._history.append(message)
         elif kind == "recording":
-            self._history = [item for item in self._history if item.get("type") == "reference"]
+            self._history = [
+                item for item in self._history if item.get("type") == "reference"
+            ]
             self._history.append(message)
         elif kind == "result":
-            self._history = [item for item in self._history if item.get("type") in ("reference", "recording")]
+            self._history = [
+                item
+                for item in self._history
+                if item.get("type") in ("reference", "recording")
+            ]
             self._history.append(message)
 
     async def _broadcast(self, payload: str) -> None:
@@ -97,7 +109,9 @@ class OverlayHub:
         self._loop.run_forever()
 
     async def _start(self, port: int) -> None:
-        self._server = await serve(self._handler, "127.0.0.1", port, process_request=self._http)
+        self._server = await serve(
+            self._handler, "127.0.0.1", port, process_request=self._http
+        )
 
     async def _handler(self, websocket) -> None:
         try:

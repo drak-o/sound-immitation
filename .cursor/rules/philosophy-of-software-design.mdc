@@ -35,153 +35,159 @@ Before finalizing any change, verify:
 - Complexity spread (same special handling repeated across call sites)
 - Temporal APIs (`prepare/process/finalize` without domain concepts; partial objects whose meaning depends on call order)
 
----
+## Examples
 
-## Feature Examples
+### Deep module vs shallow pass-through
 
-### Export pipeline (deep module vs shallow pass-through)
+```python
+# BAD — shallow: callers must know the format, the path, and the steps.
+def read_json(path):
+    return json.loads(Path(path).read_text(encoding="utf-8"))
 
-```javascript
-// BAD — shallow: callers must know file format, paths, and steps
-async function readJson(path) { return JSON.parse(await fs.readFile(path)); }
-async function writeJson(path, data) { await fs.writeFile(path, JSON.stringify(data)); }
-async function validateSchema(data, schema) { /* ... */ }
+def write_json(path, data):
+    Path(path).write_text(json.dumps(data), encoding="utf-8")
 
-// GOOD — deep: one concept, one interface, details hidden
-class ProjectExporter {
-  /** Export a no-code project to a runnable scaffold at destination. */
-  async export(sourceProject, destination) {
-    const model = await this.#loadAndValidate(sourceProject);
-    await this.#materialize(model, destination);
-  }
-}
+def validate_schema(data, schema):
+    ...
+
+# GOOD — deep: one concept, one call. Loading and checking stay inside.
+class ProjectExporter:
+    def export(self, source, destination):
+        """Export a project to a runnable scaffold at destination."""
+        model = self._load_and_validate(source)
+        self._materialize(model, destination)
 ```
 
-### Information hiding (don't leak storage shape)
+### Information hiding
 
-```javascript
-// BAD — callers depend on internal representation
-class UserStore {
-  getRows() { return this.db.query('SELECT * FROM users'); }
-  setRows(rows) { this.rows = rows; }
-}
+```python
+# BAD — callers depend on the table.
+class UserStore:
+    def get_rows(self):
+        return self.db.query("SELECT * FROM users")
 
-// GOOD — callers depend on the concept, not the table
-class UserStore {
-  async findByEmail(email) { /* ... */ }
-  async save(user) { /* ... */ }
-}
+    def set_rows(self, rows):
+        self.rows = rows
+
+# GOOD — callers depend on the concept, not the storage.
+class UserStore:
+    def find_by_email(self, email):
+        ...
+
+    def save(self, user):
+        ...
 ```
 
-### Interface design (eliminate call-order traps)
+### Interface design
 
-```javascript
-// BAD — fragile temporal API
-const parser = new ConfigParser();
-parser.setFormat('json');
-parser.setStrict(true);
-parser.load(file); // throws if order wrong
+```python
+# BAD — fragile temporal API. load() throws if the calls came in the wrong order.
+parser = ConfigParser()
+parser.set_format("json")
+parser.set_strict(True)
+parser.load(file)
 
-// GOOD — valid states only; options at construction
-const config = await Config.load(file, { strict: true });
+# GOOD — valid states only. Options are fixed at construction.
+config = Config.load(file, strict=True)
 ```
 
-### Pull complexity downward (don't push flags to every caller)
+### Pull complexity downward
 
-```javascript
-// BAD — every call site repeats edge handling
-function renderPage(page, { isMobile, isPreview, locale }) {
-  if (isPreview) { /* ... */ }
-  if (isMobile) { /* ... */ }
-  // ...
-}
+```python
+# BAD — every call site repeats the edge handling.
+def render_page(page, is_mobile, is_preview, locale):
+    if is_preview:
+        ...
+    if is_mobile:
+        ...
 
-// GOOD — caller passes intent; module owns the matrix
-function renderPage(page, { viewport, mode, locale }) {
-  return ViewportRenderer.for(viewport, mode).render(page, locale);
-}
+# GOOD — the caller passes intent. The module owns the combinations.
+def render_page(page, viewport, mode, locale):
+    return ViewportRenderer.for_viewport(viewport, mode).render(page, locale)
 ```
 
-### Special-general decomposition (isolate edge cases)
+### Special-general decomposition
 
-```javascript
-// BAD — core path cluttered with rare branches
-function calculatePrice(cart, user) {
-  if (user.isEmployee && cart.hasGiftCard && cart.region === 'EU') { /* ... */ }
-  // normal pricing buried below
-}
+```python
+# BAD — the normal path is buried under a rare branch.
+def calculate_price(cart, user):
+    if user.is_employee and cart.has_gift_card and cart.region == "EU":
+        ...
+    # normal pricing below
 
-// GOOD — general case stays obvious
-function calculatePrice(cart, user) {
-  const base = priceEngine.quote(cart);
-  return adjustmentRules.apply(base, user, cart);
-}
+# GOOD — the general case stays obvious. The rare case lives elsewhere.
+def calculate_price(cart, user):
+    base = price_engine.quote(cart)
+    return adjustment_rules.apply(base, user, cart)
 ```
 
-### Error handling (define away invalid states)
+### Error handling
 
-```javascript
-// BAD — half-valid object; callers must tiptoe
-const order = createOrder(items); // may lack shipping
-order.setShipping(address);
-order.submit(); // throws if shipping missing
+```python
+# BAD — half-valid object. Callers have to tiptoe, and submit() throws if shipping is missing.
+order = create_order(items)
+order.set_shipping(address)
+order.submit()
 
-// GOOD — invalid states unrepresentable
-const order = Order.create(items, shippingAddress);
-await order.submit();
+# GOOD — an invalid state cannot be represented.
+order = Order.create(items, shipping_address)
+order.submit()
 ```
 
-### Combine vs separate (one coherent module)
+### Combine vs separate
 
-```javascript
-// BAD — readers jump across shallow files for one idea
-// validate.js, normalize.js, persist.js — each ~5 lines, no real boundary
+```python
+# BAD — one idea split across shallow modules with no real boundary.
+# validate.py, normalize.py, persist.py — each a handful of lines.
 
-// GOOD — separation only when it hides a real design decision
-// validation/normalization co-located with the domain type they protect
-class ExportManifest {
-  static parse(raw) { /* validate + normalize here */ }
-}
+# GOOD — separate only when the split hides a real decision.
+# Validation and normalization live with the type they protect.
+class ExportManifest:
+    @staticmethod
+    def parse(raw):
+        ...
 ```
 
-### Naming (abstraction, not mechanism)
+### Naming
 
-```javascript
-// BAD
-function fetchFromS3AndParseJson(bucket, key) { /* ... */ }
+```python
+# BAD — the name is the mechanism.
+def fetch_from_s3_and_parse_json(bucket, key):
+    ...
 
-// GOOD
-function loadProjectSnapshot(location) { /* ... */ }
+# GOOD — the name is the concept.
+def load_project_snapshot(location):
+    ...
 ```
 
-### Comments (contract and why, not obvious what)
+### Comments
 
-```javascript
-// BAD — narrates steps the code already shows
-// Loop through pages and write each file
-for (const page of pages) {
-  await fs.writeFile(path.join(pagesDir, `${page.name}.jsx`), renderPage(page));
-}
+```python
+# BAD — narrates the step the code already shows.
+# Loop through pages and write each file.
+for page in pages:
+    path.write_text(render_page(page), encoding="utf-8")
 
-// BAD — comment replaces a missing name
-// Convert route to PascalCase component filename
-function r2c(route) { /* ... */ }
+# BAD — the comment is doing the job of a name.
+# Convert route to a PascalCase component filename.
+def r2c(route):
+    ...
 
-// BAD — restates the next line
-// Set quotes to true for HTML attributes
-escapeFor(href, { quotes: true });
+# BAD — restates the next line.
+# Set quotes so HTML attributes are escaped.
+escape_for(href, quotes=True)
 
-// GOOD — names carry the what; comment carries non-obvious domain context
-/** Numeric path segments are Builder route IDs, not page slugs. */
-function routeToComponentName(route) { /* ... */ }
+# GOOD — the name carries the what. The comment carries domain context the signature cannot.
+def route_to_component_name(route):
+    """Numeric path segments are route ids, not page slugs."""
 
-// GOOD — documents an invariant or constraint not visible in signatures
-/** Destination is wiped before bootstrap; valid only on an empty target dir. */
-async function materialize(model, destination) { /* ... */ }
+# GOOD — an invariant that is not visible in the signature.
+def materialize(model, destination):
+    """Destination is wiped first. Valid only on an empty target directory."""
 
-// GOOD — explains a trade-off or external constraint
-/** Does not run npm install — user runs that from README after export. */
-async function bootstrapViteScaffold(destination) { /* ... */ }
+# GOOD — a trade-off or an external constraint.
+def bootstrap_scaffold(destination):
+    """Does not install dependencies. The user runs that after export."""
 ```
 
 When generating or reviewing code, fight complexity directly: deeper modules, simpler interfaces, stronger hiding, fewer special cases.
