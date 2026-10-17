@@ -1,0 +1,6 @@
+sounddevice
+soundfile
+miniaudio
+numpy
+scipy
+websockets

@@ -1,0 +1,13 @@
+{
+  "player_name": "SnapiBoy",
+  "log_path": "C:\\Users\\snapi\\AppData\\Roaming\\.minecraft\\logs\\latest.log",
+  "sounds_dir": "sounds",
+  "countdown_sound": null,
+  "threshold_percent": 70,
+  "countdown_seconds": 3,
+  "overlay_port": 8765,
+  "input_device": null,
+  "output_device": null,
+  "panic_chord": "ctrl+alt+f12",
+  "extra_patterns": []
+}

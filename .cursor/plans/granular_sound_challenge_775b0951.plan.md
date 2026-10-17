@@ -4,16 +4,16 @@ overview: Replace the one-shot module list with four checked iterations. Each it
 todos:
   - id: iter-listen
     content: "Iteration 1: Config, ChatWatch, DeathMatcher, and --listen. Stop for a fake death, an advancement, and a log rotation check."
-    status: pending
+    status: completed
   - id: iter-score
     content: "Iteration 2: AudioSession, Scorer.percent with the DTW contract, and --demo for one attempt. Stop until the printed percentage is believable."
-    status: pending
+    status: completed
   - id: iter-overlay
     content: "Iteration 3: OverlayHub and the transparent page using the five message types. Stop until the grey reference and live trace share one timeline in OBS."
-    status: pending
+    status: completed
   - id: iter-lock
     content: "Iteration 4: InputLock on its own message thread, panic chord Ctrl+Alt+F12, then runLocked retry-until-pass with drain."
-    status: pending
+    status: completed
 isProject: false
 ---
 
