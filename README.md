@@ -64,3 +64,11 @@ Press `panic_shortcut` (default `ctrl+alt+f12`) to abort the round and restore i
 | `extra_patterns` | Extra regular expressions. A chat line that matches any of them is also a death. Advancement lines are never deaths. |
 
 The built-in matcher covers vanilla English death messages, including item variants such as `using Diamond Sword`.
+
+## License
+
+Copyright (C) 2026 drak-o
+
+Sound imitation is free software: you can redistribute it and/or modify it under the terms of the GNU General Public License as published by the Free Software Foundation, either version 3 of the License, or (at your option) any later version.
+
+The license text is in [LICENSE](LICENSE).

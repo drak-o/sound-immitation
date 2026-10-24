@@ -59,6 +59,8 @@ def _spectral_flatness(power: np.ndarray) -> np.ndarray:
     Herre, Allamanche, and Hellmuth, "Robust Matching of Audio Signals
     Using Spectral Flatness Features," Proc. WASPAA, pp. 127–130, 2001.
     Flatness near 1 is noise. Near 0 is tonal.
+
+    hmm why does this have only 8 bands? if we used 16 bands, would we get a better accuracy?
     """
     floored = np.maximum(power, 1e-20)
     geometric = np.exp(np.mean(np.log(floored), axis=1))
