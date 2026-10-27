@@ -47,6 +47,47 @@ Deaths already in the log when the program starts are skipped. Chat written duri
 
 Press `panic_shortcut` (default `ctrl+alt+f12`) to abort the round and restore input. `--listen` does not lock input.
 
+## Score log
+
+The pass line is `threshold_percent`, default 70. The percentage is the mean similarity of frames along a time warp. Each entry is the commit that put that comparison in `app/score.py`, the check that was run, and why it stayed or was thrown out. `6ea0134` ("license") only added the license lines and is not a scoring change.
+
+### `f537911` — failed
+
+2026-10-17, "pre refactor". This commit adds `app/score.py`. Each clip and each take is an amplitude envelope, aligned with dynamic time warping over 20% of the longer envelope, then scored with Pearson correlation.
+
+Tested by tapping along with a rhythmic clip. The taps cleared the pass line. A tap train has the same loudness shape as the clip, so the warp treated tapping the desk as an imitation.
+
+### `8d71c34` — failed
+
+2026-10-17, "up". Replaces the envelope with eight log-spaced band energies from 80 Hz to 7.6 kHz. Each frame is divided so the bands sum to 1, and frames are compared with cosine similarity. The warp stays at 20% of the longer clip.
+
+This stopped the taps. A tap fills every band, and a voice or a tone keeps its energy in a few. It failed a breath. A breath also covers every band, and cosine still counted that as a match against a clip that uses only some of the bands. That is the reason recorded in the next commit.
+
+### `38b4d9a` — failed
+
+2026-10-17, "breath fix". Replaces cosine with histogram intersection, and narrows the warp from 20% of the clip to 80 ms, so a small slip still matches and a late start does not.
+
+Tested on real microphone takes against the clips. Scores landed about 25–57, under the pass line. On two histograms with the same bin sum, intersection is half an L1 distance, so noise in bands the clip leaves empty took about half the score away from a real imitation.
+
+### `1028b2d` — held
+
+2026-10-17, "fix breath". This is the scorer that is in the tree now. The same eight bands, converted with `20 log10` and with the frame mean subtracted, compared again with cosine. The 80 ms warp stays. A take whose median spectral flatness is above 0.45 scores 0.
+
+Tested in `Scorer` on the four clips in `sounds/`:
+
+- Each clip against itself, and against the same samples at 0.15 gain: both near 100. An exact copy is 100 because the cosine of a vector with itself is 1. A gain is a constant in decibels, so subtracting the frame mean keeps the quiet copy on that same vector.
+- Each clip against broadband noise of the same length: under 70.
+- A pure tone against that noise: under 70.
+
+Cosine alone still passed a clipped breath, at 79% against the Spongebob clip. Cosine only sees which bands are strong relative to each other, and that breath pointed the same way. Its flatness (geometric mean of the eight bands divided by their arithmetic mean) was 0.55–0.64. Every reference clip is at most 0.20. The 0.45 gate sits between those two measurements, so that breath scores 0. Flatness only rejects the take. The percentage is still the cosine.
+
+### Not run
+
+No commit. These were read and left out.
+
+- A codebook histogram, and a spectral-flatness fingerprint. Both compare an unordered collection of frames and answer which recording a library contains. This score has to follow one short clip in time.
+- MFCCs. The eight log bands were already the feature that held the copy, quiet-copy, and noise checks. The warp still compares those bands.
+
 ## Config
 
 `config.json` sits next to `main.py`.
