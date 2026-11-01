@@ -38,7 +38,7 @@ class Scorer:
         reference = _log_bands(reference_power)
         recorded = _log_bands(recorded_power)
         if recorded.shape[0] == 0 or reference.shape[0] == 0:
-            print("similarity=0.0000 percent=0.0")
+            # print("similarity=0.0000 percent=0.0") # debug log
             return 0.0
         similarity = _dtw_similarity(reference, recorded)
         take_flat = float(np.median(_spectral_flatness(recorded_power)))
@@ -49,7 +49,8 @@ class Scorer:
         if take_flat > 0.45:
             similarity = 0.0
         percent = round(max(0.0, similarity) * 100, 1)
-        print(f"similarity={similarity:.4f} flatness={take_flat:.2f} percent={percent}")
+        
+        # print(f"similarity={similarity:.4f} flatness={take_flat:.2f} percent={percent}") # debug log
         return percent
 
 
