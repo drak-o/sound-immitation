@@ -126,11 +126,15 @@ def setUpModule() -> None:
     _IMPOSTOR.clear()
     _CLIPS.clear()
     _RECORDINGS.clear()
+
+    # Load recordings from tests/recordings/ into _RECORDINGS 
     recordings = ROOT / "tests" / "recordings"
     if recordings.is_dir():
         for path in recordings.iterdir():
             if path.is_file() and path.suffix.lower() in _AUDIO_EXTENSIONS:
                 _RECORDINGS[path.stem] = path
+
+    # Load clips from sounds/ into _CLIPS
     for path in clips:
         samples, rate = _load_samples(path)
         duration_ms = max(1, int(round(samples.shape[0] / rate * 1000)))
