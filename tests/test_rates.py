@@ -1,70 +1,30 @@
 """Eight imitation cases. FAR, FRR, and EER are derived from their scores.
 
-A plausible imitation is a microphone take under
-tests/recordings/<clip stem>/plausible/. It is a genuine pair: a person
-making the clip, expected to pass.
+A plausible imitation is a microphone take in tests/recordings/ named the
+same as the clip. It is a genuine pair: a person making the clip, expected
+to pass.
 Breathing and tapping are one file each in tests/recordings/, named
 breathing and tapping. Each is an incorrect pair against every clip. Pass
 is a score of 50 or higher.
 Each trial is written to tests/battery.log as the percent and the booleans
-predicted and actual. Actual is true when the percent is 50 or higher. The
-terminal prints one line per revision: the commit and its FAR, FRR, and
-EER. The same cases then run for every commit that changed app/score.py.
+predicted and actual. Actual is true when the percent is 50 or higher.
 """
 
 from __future__ import annotations
 
-import io
-import os
 import subprocess
 import sys
-import tempfile
 import unittest
-import warnings
 from pathlib import Path
-from unittest.runner import TextTestRunner, registerResult
 
 import numpy as np
-import soundfile as sf
 
 ROOT = Path(__file__).resolve().parent.parent
-# An older revision is loaded from BATTERY_APP. Otherwise this is the working tree.
-if os.environ.get("BATTERY_APP"):
-    sys.path.insert(0, os.environ["BATTERY_APP"])
-else:
-    sys.path.insert(0, str(ROOT))
+# The script's directory is tests/, so the working tree has to be on the path.
+sys.path.insert(0, str(ROOT))
 
-from app.audio import Clip, Take
+from app.audio import Clip, Take, _load_samples
 from app.score import Scorer
-
-
-def _run_without_progress(self, test):
-    """The terminal is one rates line per commit. Trials are written to the log."""
-    result = self._makeResult()
-    registerResult(result)
-    result.failfast = self.failfast
-    result.buffer = self.buffer
-    result.tb_locals = self.tb_locals
-    result.dots = False
-    result.showAll = False
-    with warnings.catch_warnings():
-        if self.warnings:
-            warnings.simplefilter(self.warnings)
-        start_test_run = getattr(result, "startTestRun", None)
-        if start_test_run is not None:
-            start_test_run()
-        try:
-            test(result)
-        finally:
-            stop_test_run = getattr(result, "stopTestRun", None)
-            if stop_test_run is not None:
-                stop_test_run()
-    if result.errors or result.failures:
-        result.printErrors()
-    return result
-
-
-TextTestRunner.run = _run_without_progress
 
 # Pass is 50. A correct pair below the line is a false rejection.
 PASS_PERCENT = 50.0
@@ -74,51 +34,16 @@ _AUDIO_EXTENSIONS = {".wav", ".flac", ".ogg", ".mp3"}
 _GENUINE: list[float] = []
 _IMPOSTOR: list[float] = []
 _CLIPS: list[tuple[str, np.ndarray, int, Clip]] = []
+_RECORDINGS: dict[str, Path] = {}
 _SCORER = Scorer()
-_LOG: io.TextIOWrapper | None = None
-_LOG_PATH: Path | None = None
-_REVISION = ""
 
 
-# cant use audio.py because we go to the past git versions and we need consistent sample loading
-def _load_samples(path: Path) -> tuple[np.ndarray, int]:
-    if path.suffix.lower() == ".mp3":
-        import miniaudio
-
-        decoded = miniaudio.decode_file(
-            str(path),
-            output_format=miniaudio.SampleFormat.FLOAT32,
-            nchannels=1,
-            sample_rate=44100,
-        )
-        samples = np.array(decoded.samples, dtype=np.float32)
-        return samples, int(decoded.sample_rate)
-
-    data, rate = sf.read(str(path), dtype="float32", always_2d=True)
-    samples = data.mean(axis=1).astype(np.float32, copy=False)
-    return samples, int(rate)
-
-
-def _audio_files(directory: Path) -> list[Path]:
-    return sorted(
-        path
-        for path in directory.iterdir()
-        if path.is_file() and path.suffix.lower() in _AUDIO_EXTENSIONS
-    )
-
-
-# FAR and FRR
-def _rates(
-    genuine: list[float], impostor: list[float], threshold: float
-) -> tuple[float, float, int, int]:
-    # An incorrect pair on or above the line is a false acceptance.
+def _rates(genuine, impostor, threshold):
     false_rejections = sum(score < threshold for score in genuine)
     false_acceptances = sum(score >= threshold for score in impostor)
-    false_rejection_rate = 100.0 * false_rejections / len(genuine)
-    false_acceptance_rate = 100.0 * false_acceptances / len(impostor)
     return (
-        false_acceptance_rate,
-        false_rejection_rate,
+        100.0 * false_acceptances / len(impostor),
+        100.0 * false_rejections / len(genuine),
         false_acceptances,
         false_rejections,
     )
@@ -159,11 +84,6 @@ def _eer(genuine: list[float], impostor: list[float]) -> tuple[float, float]:
     return best_rate, best_threshold
 
 
-def _log(line: str) -> None:
-    if _LOG is not None:
-        print(line, file=_LOG)
-
-
 def _score(
     stem: str, case: str, clip: Clip, samples: np.ndarray, rate: int, predicted: bool
 ) -> None:
@@ -176,64 +96,43 @@ def _score(
     scores.append(percent)
 
     # pure flat sound / faaah: 10.7 predicted=False actual=False
-    _log(f"{case} / {stem}: {percent} predicted={predicted} actual={actual}")
+    print(f"{case} / {stem}: {percent} predicted={predicted} actual={actual}")
 
 
 def _shared(name: str) -> tuple[np.ndarray, int]:
-    recordings = ROOT / "tests" / "recordings"
-    matches = (
-        [path for path in _audio_files(recordings) if path.stem == name]
-        if recordings.is_dir()
-        else []
-    )
-    if not matches:
-        _log(f"missing {name}")
+    path = _RECORDINGS.get(name)
+    if path is None:
+        print(f"missing {name}")
         raise unittest.SkipTest(f"missing {name}")
-    samples, rate = _load_samples(matches[0])
-    if samples.size == 0 or rate <= 0:
-        raise RuntimeError(f"Could not read audio from {matches[0]}")
-    return samples, rate
-
-
-def _revision_label(commit: str = "HEAD") -> str:
-    return subprocess.check_output(
-        ["git", "log", "-1", "--format=%h %s", commit], cwd=ROOT, text=True
-    ).strip()
+    return _load_samples(path)
 
 
 def setUpModule() -> None:
-    global _LOG, _LOG_PATH, _REVISION
     sounds = ROOT / "sounds"
-    
     if not sounds.is_dir():
         raise RuntimeError(f"Sounds directory does not exist: {sounds}")
-    
-    clips = _audio_files(sounds)
-    
+    clips = [
+        path
+        for path in sounds.iterdir()
+        if path.is_file() and path.suffix.lower() in _AUDIO_EXTENSIONS
+    ]
     if not clips:
         raise RuntimeError(f"No audio files in {sounds}")
-    
-    _LOG_PATH = Path(os.environ.get("BATTERY_LOG", ROOT / "tests" / "battery.log"))
-    
-    # The working tree starts the log. Each older revision appends its own trials.
-    _LOG = open(
-        _LOG_PATH,
-        "a" if os.environ.get("BATTERY_APP") else "w",
-        encoding="utf-8",
-        buffering=1,
+    # Every print in this run is a battery.log line. Unittest progress stays on stderr.
+    sys.stdout = open(
+        ROOT / "tests" / "battery.log", "w", encoding="utf-8", buffering=1
     )
-    _REVISION = os.environ.get("BATTERY_REVISION") or _revision_label()
-    
-    if os.environ.get("BATTERY_APP"):
-        _log("")
-    _log(f"revision {_REVISION}")
     _GENUINE.clear()
     _IMPOSTOR.clear()
     _CLIPS.clear()
+    _RECORDINGS.clear()
+    recordings = ROOT / "tests" / "recordings"
+    if recordings.is_dir():
+        for path in recordings.iterdir():
+            if path.is_file() and path.suffix.lower() in _AUDIO_EXTENSIONS:
+                _RECORDINGS[path.stem] = path
     for path in clips:
         samples, rate = _load_samples(path)
-        if samples.size == 0 or rate <= 0:
-            raise RuntimeError(f"Could not read audio from {path}")
         duration_ms = max(1, int(round(samples.shape[0] / rate * 1000)))
         clip = Clip(
             samples=samples, sample_rate=rate, duration_ms=duration_ms, peaks=[]
@@ -241,68 +140,38 @@ def setUpModule() -> None:
         _CLIPS.append((path.stem, samples, rate, clip))
 
 
-# called after every version
 def tearDownModule() -> None:
     """
-    revision HEAD
+    revision d014655 testing-refactor-wip
     genuine=9 impostor=15
     FAR=46.7 (7/15) at 50
     FRR=11.1 (1/9) at 50
     EER=24.4 at 57.7
     """
-    if _GENUINE and _IMPOSTOR:
-        false_acceptance_rate, false_rejection_rate, acceptances, rejections = _rates(
-            _GENUINE, _IMPOSTOR, PASS_PERCENT
-        )
-        equal_error_rate, threshold = _eer(_GENUINE, _IMPOSTOR)
-        _log("")
-        _log(f"genuine={len(_GENUINE)} impostor={len(_IMPOSTOR)}")
-        _log(
-            f"FAR={false_acceptance_rate:.1f} ({acceptances}/{len(_IMPOSTOR)})"
-            f" at {PASS_PERCENT:.0f}"
-        )
-        _log(
-            f"FRR={false_rejection_rate:.1f} ({rejections}/{len(_GENUINE)})"
-            f" at {PASS_PERCENT:.0f}"
-        )
-        _log(f"EER={equal_error_rate:.1f} at {threshold:.1f}")
-        print(
-            f"{_REVISION} FAR={false_acceptance_rate:.1f}"
-            f" FRR={false_rejection_rate:.1f} EER={equal_error_rate:.1f}",
-            flush=True,
-        )
-    if _LOG is not None:
-        _LOG.close()
-    # This process was started for one older revision. The parent walks the rest.
-    if os.environ.get("BATTERY_APP") or _LOG_PATH is None:
-        return
-    commits = subprocess.check_output(
-        ["git", "log", "--reverse", "--format=%H", "--", "app/score.py"],
-        cwd=ROOT,
-        text=True,
-    ).split()
-    for commit in commits:
-        with tempfile.TemporaryDirectory(prefix="battery-") as temporary:
-            app_dir = Path(temporary) / "app"
-            app_dir.mkdir()
-            # Regular package, so the import uses this revision's files.
-            (app_dir / "__init__.py").write_text("", encoding="utf-8")
-            for name in ("score.py", "audio.py"):
-                source = subprocess.check_output(
-                    ["git", "show", f"{commit}:app/{name}"], cwd=ROOT
-                )
-                (app_dir / name).write_bytes(source)
-            env = os.environ.copy()
-            env["BATTERY_APP"] = temporary
-            env["BATTERY_REVISION"] = _revision_label(commit)
-            env["BATTERY_LOG"] = str(_LOG_PATH)
-            env["PYTHONDONTWRITEBYTECODE"] = "1"
-            subprocess.run(
-                [sys.executable, "-m", "unittest", "tests.test_rates"],
-                cwd=ROOT,
-                env=env,
-                check=True,
+    try:
+        if _GENUINE and _IMPOSTOR:
+            false_acceptance_rate, false_rejection_rate, acceptances, rejections = (
+                _rates(_GENUINE, _IMPOSTOR, PASS_PERCENT)
             )
+            equal_error_rate, threshold = _eer(_GENUINE, _IMPOSTOR)
+            revision = subprocess.check_output(
+                ["git", "log", "-1", "--format=%h %s"], cwd=ROOT, text=True
+            ).strip()
+            print()
+            print(f"revision {revision}")
+            print(f"genuine={len(_GENUINE)} impostor={len(_IMPOSTOR)}")
+            print(
+                f"FAR={false_acceptance_rate:.1f} ({acceptances}/{len(_IMPOSTOR)})"
+                f" at {PASS_PERCENT:.0f}"
+            )
+            print(
+                f"FRR={false_rejection_rate:.1f} ({rejections}/{len(_GENUINE)})"
+                f" at {PASS_PERCENT:.0f}"
+            )
+            print(f"EER={equal_error_rate:.1f} at {threshold:.1f}")
+    finally:
+        sys.stdout.close()
+        sys.stdout = sys.__stdout__
 
 
 class ImitationTest(unittest.TestCase):
@@ -316,19 +185,14 @@ class ImitationTest(unittest.TestCase):
 
     def test_plausible(self) -> None:
         found = False
-        recordings = ROOT / "tests" / "recordings"
         for stem, _, _, clip in _CLIPS:
-            folder = recordings / stem / "plausible"
-            files = _audio_files(folder) if folder.is_dir() else []
-            if not files:
-                _log(f"absent {stem}/plausible")
+            recording = _RECORDINGS.get(stem)
+            if recording is None:
+                print(f"missing {stem}")
                 continue
-            for recording in files:
-                found = True
-                recorded, recorded_rate = _load_samples(recording)
-                if recorded.size == 0 or recorded_rate <= 0:
-                    raise RuntimeError(f"Could not read audio from {recording}")
-                _score(stem, "plausible", clip, recorded, recorded_rate, True)
+            found = True
+            recorded, recorded_rate = _load_samples(recording)
+            _score(stem, "plausible", clip, recorded, recorded_rate, True)
         if not found:
             self.skipTest("missing plausible imitation")
 

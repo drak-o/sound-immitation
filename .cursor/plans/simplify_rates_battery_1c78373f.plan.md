@@ -4,16 +4,16 @@ overview: The test loads old checkouts because tearDownModule re-runs itself onc
 todos:
   - id: drop-history
     content: Remove the old-commit runner, progress silencer, _LOG_PATH, _REVISION, and write the current commit in the tearDown summary
-    status: pending
+    status: completed
   - id: share-loader
     content: Import _load_samples from app/audio.py and raise there on empty audio
-    status: pending
+    status: completed
   - id: flat-recordings
     content: Move plausible takes to tests/recordings/<stem> and look them up by filename
-    status: pending
+    status: completed
   - id: inline-helpers
     content: Inline _audio_files, _log, and the percentage math; keep the count helper, _eer, and _shared
-    status: pending
+    status: completed
 isProject: false
 ---
 

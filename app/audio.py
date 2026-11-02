@@ -85,11 +85,14 @@ def _load_samples(path: Path) -> tuple[np.ndarray, int]:
             sample_rate=44100,
         )
         samples = np.array(decoded.samples, dtype=np.float32)
-        return samples, int(decoded.sample_rate)
-
-    data, rate = sf.read(str(path), dtype="float32", always_2d=True)
-    samples = data.mean(axis=1).astype(np.float32, copy=False)
-    return samples, int(rate)
+        rate = int(decoded.sample_rate)
+    else:
+        data, rate = sf.read(str(path), dtype="float32", always_2d=True)
+        samples = data.mean(axis=1).astype(np.float32, copy=False)
+        rate = int(rate)
+    if samples.size == 0 or rate <= 0:
+        raise RuntimeError(f"Could not read audio from {path}")
+    return samples, rate
 
 
 class AudioSession:
@@ -126,8 +129,6 @@ class AudioSession:
             raise SystemExit(f"No audio files in {directory}")
         path = random.choice(files)
         samples, rate = _load_samples(path)
-        if samples.size == 0 or rate <= 0:
-            raise SystemExit(f"Could not read audio from {path}")
         # Cut the quiet lead-in. 2% of the peak, held for 10 ms, is the start of
         # the sound, so playback begins on the countdown instead of after a gap.
         peak = float(np.max(np.abs(samples)))
