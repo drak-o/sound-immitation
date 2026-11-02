@@ -6,10 +6,10 @@ making the clip, expected to pass.
 Breathing and tapping are one file each in tests/recordings/, named
 breathing and tapping. Each is an incorrect pair against every clip. Pass
 is a score of 50 or higher.
-Each trial is written to tests/battery.log as the percent, the predicted
-Pass or Fail, and the actual Pass or Fail at 50. The terminal prints one
-line per revision: the commit and its FAR, FRR, and EER. The same cases
-then run for every commit that changed app/score.py.
+Each trial is written to tests/battery.log as the percent and the booleans
+predicted and actual. Actual is true when the percent is 50 or higher. The
+terminal prints one line per revision: the commit and its FAR, FRR, and
+EER. The same cases then run for every commit that changed app/score.py.
 """
 
 from __future__ import annotations
@@ -21,7 +21,6 @@ import sys
 import tempfile
 import unittest
 import warnings
-from contextlib import redirect_stdout
 from pathlib import Path
 from unittest.runner import TextTestRunner, registerResult
 
@@ -166,23 +165,18 @@ def _log(line: str) -> None:
 
 
 def _score(
-    stem: str, case: str, clip: Clip, samples: np.ndarray, rate: int, correct: bool
+    stem: str, case: str, clip: Clip, samples: np.ndarray, rate: int, predicted: bool
 ) -> None:
-    """The percent joins the genuine or impostor list.
-
-    The log states the prediction and the result at 50.
-    """
+    """The percent is kept for the rates."""
     take = Take(samples=np.asarray(samples), sample_rate=rate, peaks=[])
     percent = _SCORER.percent(clip, take)
 
-    passed = percent >= PASS_PERCENT
-    scores = _GENUINE if correct else _IMPOSTOR
+    actual = percent >= PASS_PERCENT
+    scores = _GENUINE if predicted else _IMPOSTOR
     scores.append(percent)
-    prediction = "Pass" if correct else "Fail"
-    actual = "Pass" if passed else "Fail"
 
-    # pure flat sound / faaah: 10.7 predicted Fail, actual Fail
-    _log(f"{case} / {stem}: {percent} predicted {prediction}, actual {actual}")
+    # pure flat sound / faaah: 10.7 predicted=False actual=False
+    _log(f"{case} / {stem}: {percent} predicted={predicted} actual={actual}")
 
 
 def _shared(name: str) -> tuple[np.ndarray, int]:
@@ -193,7 +187,7 @@ def _shared(name: str) -> tuple[np.ndarray, int]:
         else []
     )
     if not matches:
-        _log(f"absent {name}")
+        _log(f"missing {name}")
         raise unittest.SkipTest(f"missing {name}")
     samples, rate = _load_samples(matches[0])
     if samples.size == 0 or rate <= 0:
@@ -210,12 +204,17 @@ def _revision_label(commit: str = "HEAD") -> str:
 def setUpModule() -> None:
     global _LOG, _LOG_PATH, _REVISION
     sounds = ROOT / "sounds"
+    
     if not sounds.is_dir():
         raise RuntimeError(f"Sounds directory does not exist: {sounds}")
+    
     clips = _audio_files(sounds)
+    
     if not clips:
         raise RuntimeError(f"No audio files in {sounds}")
+    
     _LOG_PATH = Path(os.environ.get("BATTERY_LOG", ROOT / "tests" / "battery.log"))
+    
     # The working tree starts the log. Each older revision appends its own trials.
     _LOG = open(
         _LOG_PATH,
@@ -224,6 +223,7 @@ def setUpModule() -> None:
         buffering=1,
     )
     _REVISION = os.environ.get("BATTERY_REVISION") or _revision_label()
+    
     if os.environ.get("BATTERY_APP"):
         _log("")
     _log(f"revision {_REVISION}")
