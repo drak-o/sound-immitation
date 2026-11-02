@@ -241,7 +241,15 @@ def setUpModule() -> None:
         _CLIPS.append((path.stem, samples, rate, clip))
 
 
+# called after every version
 def tearDownModule() -> None:
+    """
+    revision HEAD
+    genuine=9 impostor=15
+    FAR=46.7 (7/15) at 50
+    FRR=11.1 (1/9) at 50
+    EER=24.4 at 57.7
+    """
     if _GENUINE and _IMPOSTOR:
         false_acceptance_rate, false_rejection_rate, acceptances, rejections = _rates(
             _GENUINE, _IMPOSTOR, PASS_PERCENT
