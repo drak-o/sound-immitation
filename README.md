@@ -101,7 +101,7 @@ No commit. These were read and left out.
 | `threshold_percent` | Minimum score that ends the round. Default 50. |
 | `countdown_seconds` | Seconds to count down before recording. At least 1. |
 | `overlay_port` | Local port for the overlay page and its websocket. |
-| `panic_shortcut` | Keys that release the lock, joined with `+`. Modifiers are `ctrl`, `alt`, and `shift`. The last part is a letter, `f1`–`f12`, or `esc`, `escape`, `pause`, `end`, `space`, `tab`, `backspace`. |
+| `panic_shortcut` | Keys that release the lock, joined with `+`. Each part is a letter or a key name (`ctrl`, `alt_l`, `f12`, `esc`). A name also matches that name with `_l` or `_r` added. |
 
 The built-in matcher covers vanilla English death messages, including item variants such as `using Diamond Sword`.
 
