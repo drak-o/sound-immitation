@@ -131,6 +131,7 @@ class AudioSession:
         samples, rate = _load_samples(path)
         # Cut the quiet lead-in. 2% of the peak, held for 10 ms, is the start of
         # the sound, so playback begins on the countdown instead of after a gap.
+		# dont like this could be lazy and just check none
         peak = float(np.max(np.abs(samples)))
         window = max(1, int(rate * 0.01))
         if peak > 1e-8 and samples.size > window:

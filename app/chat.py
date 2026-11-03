@@ -33,19 +33,14 @@ _SUFFIXES = (
 
 
 class DeathMatcher:
-    def __init__(self, player_name: str, extra_patterns: tuple[str, ...] = ()) -> None:
+    def __init__(self, player_name: str) -> None:
         self._player = player_name
-        try:
-            self._extra = tuple(re.compile(pattern) for pattern in extra_patterns)
-        except re.error as error:
-            raise SystemExit(f"Invalid extra_patterns regex: {error}") from error
 
     def matches(self, chat_text: str) -> bool:
-        if self._player and chat_text.startswith(self._player + " "):
-            remainder = chat_text[len(self._player) + 1 :]
-            if any(remainder.startswith(suffix) for suffix in _SUFFIXES):
-                return True
-        return any(pattern.search(chat_text) for pattern in self._extra)
+        if not self._player or not chat_text.startswith(self._player + " "):
+            return False
+        remainder = chat_text[len(self._player) + 1 :]
+        return any(remainder.startswith(suffix) for suffix in _SUFFIXES)
 
 
 def extract_chat(line: str) -> str | None:

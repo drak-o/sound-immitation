@@ -9,13 +9,13 @@ from app.audio import Clip, Take, resample
 _TARGET_RATE = 16000
 _FRAME_SAMPLES = int(_TARGET_RATE * 0.025)
 _HOP_SAMPLES = int(_TARGET_RATE * 0.010)
+
+# Eight log-spaced bands from 80 Hz to 7.6 kHz.
 _BAND_COUNT = 8
-# 10 ms frames. 80 ms of warp: a small slip still matches, a late start does not.
-_SLACK_FRAMES = 8
-# Eight log-spaced bands from 80 Hz to 7.6 kHz. A tap fills every band.
 _BAND_EDGES_HZ = np.geomspace(80.0, 7600.0, _BAND_COUNT + 1)
 _BIN_FREQS_HZ = np.fft.rfftfreq(_FRAME_SAMPLES, d=1.0 / _TARGET_RATE)
 _BAND_BINS: list[np.ndarray] = []
+
 for _band in range(_BAND_COUNT):
     _low = _BAND_EDGES_HZ[_band]
     _high = _BAND_EDGES_HZ[_band + 1]
@@ -23,9 +23,6 @@ for _band in range(_BAND_COUNT):
         _BIN_FREQS_HZ <= _high if _band == _BAND_COUNT - 1 else _BIN_FREQS_HZ < _high
     )
     _BAND_BINS.append(np.flatnonzero((_BIN_FREQS_HZ >= _low) & _upper))
-# Hann window so a tone stays in its bands instead of leaking into all of them.
-_WINDOW = np.hanning(_FRAME_SAMPLES)
-
 
 class Scorer:
     def percent(self, clip: Clip, take: Take) -> float:
@@ -82,9 +79,8 @@ def _frame_spectra(samples: np.ndarray) -> np.ndarray:
     spectra = np.empty((count, _BAND_COUNT), dtype=np.float64)
     for index in range(count):
         start = index * _HOP_SAMPLES
-        power = (
-            np.abs(np.fft.rfft(audio[start : start + _FRAME_SAMPLES] * _WINDOW)) ** 2
-        )
+        # Hann window so a tone stays in its bands instead of leaking into all of them.
+        power = np.abs(np.fft.rfft(audio[start : start + _FRAME_SAMPLES] * np.hanning(_FRAME_SAMPLES))) ** 2
         for band, bins in enumerate(_BAND_BINS):
             spectra[index, band] = float(power[bins].sum()) if bins.size else 0.0
     return spectra
@@ -145,7 +141,7 @@ def _dtw_similarity(reference: np.ndarray, take: np.ndarray) -> float:
     rec = np.asarray(take, dtype=np.float64)
     row_count = ref.shape[0]
     column_count = rec.shape[0]
-    band = _SLACK_FRAMES
+    band = 8 # 10 ms frames. 80 ms of warp: a small slip still matches, a late start does not?
     cost = np.full((row_count + 1, column_count + 1), np.inf, dtype=np.float64)
     cost[0, 0] = 0.0
     for row in range(1, row_count + 1):

@@ -14,7 +14,7 @@ Python 3.10 or newer.
 pip install -r requirements.txt
 ```
 
-Put clips in `sounds/`. Accepted types are `.wav`, `.flac`, `.ogg`, and `.mp3`. The first run writes `config.json` if it is missing, then stops so you can set `player_name`.
+Put clips in `sounds/`. Accepted types are `.wav`, `.flac`, `.ogg`, and `.mp3`. `config.json` ships next to `main.py`. Set `player_name` before running.
 
 ```bash
 python main.py
@@ -98,11 +98,10 @@ No commit. These were read and left out.
 | `log_path` | Path to `latest.log`. |
 | `sounds_dir` | Folder of reference clips. Relative paths are resolved from the config file. |
 | `countdown_sound` | Clip used for each countdown tick, or `null` for the built-in beep. |
-| `threshold_percent` | Minimum score that ends the round. Default 70. |
+| `threshold_percent` | Minimum score that ends the round. Default 50. |
 | `countdown_seconds` | Seconds to count down before recording. At least 1. |
 | `overlay_port` | Local port for the overlay page and its websocket. |
 | `panic_shortcut` | Keys that release the lock, joined with `+`. Modifiers are `ctrl`, `alt`, and `shift`. The last part is a letter, `f1`–`f12`, or `esc`, `escape`, `pause`, `end`, `space`, `tab`, `backspace`. |
-| `extra_patterns` | Extra regular expressions. A chat line that matches any of them is also a death. |
 
 The built-in matcher covers vanilla English death messages, including item variants such as `using Diamond Sword`.
 

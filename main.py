@@ -53,7 +53,7 @@ class App:
         self._require_player(config)
         print(f"Listening to {config.log_path}")
         watch = ChatWatch(config.log_path)
-        matcher = DeathMatcher(config.player_name, config.extra_patterns)
+        matcher = DeathMatcher(config.player_name)
         while True:
             text = watch.next_chat()
             kind = "death" if matcher.matches(text) else "ignore"
@@ -69,7 +69,7 @@ class App:
         print(f"Overlay at http://127.0.0.1:{config.overlay_port}")
         controller = self._controller(config)
         watch = ChatWatch(config.log_path)
-        matcher = DeathMatcher(config.player_name, config.extra_patterns)
+        matcher = DeathMatcher(config.player_name)
         print(f"Waiting for {config.player_name} in {config.log_path}")
         while True:
             text = watch.wait_for_death(matcher)
