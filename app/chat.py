@@ -1,4 +1,4 @@
-"""Follow Minecraft's latest.log and yield chat text."""
+"""Read Minecraft chat from latest.log and recognize a player's death."""
 
 from __future__ import annotations
 
@@ -6,21 +6,53 @@ import re
 import time
 from pathlib import Path
 
-from app.deaths import DeathMatcher
+# Remainder after "<player> ". "was " and "fell " cover every variant of those
+# verbs, including an item tail such as "using Diamond Sword".
+_SUFFIXES = (
+    "was ",
+    "fell ",
+    "walked into a cactus",
+    "drowned",
+    "experienced kinetic energy",
+    "removed an elytra while flying",
+    "blew up",
+    "hit the ground too hard",
+    "went up in flames",
+    "burned to death",
+    "walked into fire",
+    "went off with a bang",
+    "tried to swim in lava",
+    "discovered the floor was lava",
+    "walked into danger zone",
+    "froze to death",
+    "withered away",
+    "suffocated in a wall",
+    "died",
+    "didn't want to live in the same world",
+)
 
-_CHAT_MARK = "[CHAT] "
-_NOT_SECURE = "[Not Secure] "
-_COLOR = re.compile(r"§.")
+
+class DeathMatcher:
+    def __init__(self, player_name: str, extra_patterns: tuple[str, ...] = ()) -> None:
+        self._player = player_name
+        try:
+            self._extra = tuple(re.compile(pattern) for pattern in extra_patterns)
+        except re.error as error:
+            raise SystemExit(f"Invalid extra_patterns regex: {error}") from error
+
+    def matches(self, chat_text: str) -> bool:
+        if self._player and chat_text.startswith(self._player + " "):
+            remainder = chat_text[len(self._player) + 1 :]
+            if any(remainder.startswith(suffix) for suffix in _SUFFIXES):
+                return True
+        return any(pattern.search(chat_text) for pattern in self._extra)
 
 
 def extract_chat(line: str) -> str | None:
-    index = line.rfind(_CHAT_MARK)
-    if index < 0:
+    _before, mark, text = line.rpartition("[CHAT] ")
+    if not mark:
         return None
-    text = line[index + len(_CHAT_MARK) :].strip()
-    if text.startswith(_NOT_SECURE):
-        text = text[len(_NOT_SECURE) :].strip()
-    text = _COLOR.sub("", text).replace("§", "").strip()
+    text = re.sub(r"^\[Not Secure\] |§.?", "", text.strip()).strip() # replace not secure mark and color codes with ""
     if not text:
         return None
     return text

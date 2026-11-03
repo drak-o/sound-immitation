@@ -102,7 +102,7 @@ No commit. These were read and left out.
 | `countdown_seconds` | Seconds to count down before recording. At least 1. |
 | `overlay_port` | Local port for the overlay page and its websocket. |
 | `panic_shortcut` | Keys that release the lock, joined with `+`. Modifiers are `ctrl`, `alt`, and `shift`. The last part is a letter, `f1`–`f12`, or `esc`, `escape`, `pause`, `end`, `space`, `tab`, `backspace`. |
-| `extra_patterns` | Extra regular expressions. A chat line that matches any of them is also a death. Advancement lines are never deaths. |
+| `extra_patterns` | Extra regular expressions. A chat line that matches any of them is also a death. |
 
 The built-in matcher covers vanilla English death messages, including item variants such as `using Diamond Sword`.
 

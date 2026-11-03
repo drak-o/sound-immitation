@@ -7,9 +7,8 @@ import sys
 import threading
 import time
 
-from app.chat_watch import ChatWatch
+from app.chat import ChatWatch, DeathMatcher
 from app.config import ROOT, Config
-from app.deaths import DeathMatcher
 
 
 class App:
