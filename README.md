@@ -4,7 +4,7 @@ When you die in Minecraft, the game locks the keyboard and mouse, plays a random
 
 The page at `http://127.0.0.1:8765` is meant for an OBS browser source. It draws the reference waveform, the live recording, the countdown, the attempt number, and the pass or fail result. The page background is transparent.
 
-This runs on Windows. The input lock uses low-level keyboard and mouse hooks, and the default Minecraft log path is under `%APPDATA%`.
+This runs on Windows. The input lock uses pynput, and the default Minecraft log path is under `%APPDATA%`.
 
 ## Setup
 

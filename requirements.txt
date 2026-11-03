@@ -2,5 +2,6 @@ sounddevice
 soundfile
 miniaudio
 numpy
+pynput
 scipy
 websockets
