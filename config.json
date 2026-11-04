@@ -6,5 +6,5 @@
 	"threshold_percent": 50,
 	"countdown_seconds": 3,
 	"overlay_port": 8765,
-	"panic_shortcut": "ctrl+alt+f12"
+	"panic_shortcut": "<ctrl>+<alt>+<f12>"
 }

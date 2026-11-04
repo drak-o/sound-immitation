@@ -40,8 +40,8 @@ class RoundController:
             self._hub.publish({"type": "idle"})
 
     def run_locked(self) -> None:
-        abort = threading.Event()
-        self._lock.start(self._config.panic_shortcut, abort.set)
+        self._lock.start(self._config.panic_shortcut)
+        abort = self._lock.panicked
         try:
             clip = self._audio.pick_random()
             attempt = 1

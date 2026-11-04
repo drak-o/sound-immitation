@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import argparse
 import sys
-import threading
 import time
 
 from app.chat import ChatWatch, DeathMatcher
@@ -81,14 +80,13 @@ class App:
         from app.input_lock import InputLock
 
         lock = InputLock()
-        abort = threading.Event()
         print(
             f"Input locked for 5 seconds. Press {config.panic_shortcut} to release sooner."
         )
-        lock.start(config.panic_shortcut, abort.set)
+        lock.start(config.panic_shortcut)
         try:
             deadline = time.monotonic() + 5
-            while time.monotonic() < deadline and not abort.is_set():
+            while time.monotonic() < deadline and not lock.panicked.is_set():
                 time.sleep(0.05)
         finally:
             lock.stop()

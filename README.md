@@ -45,7 +45,7 @@ Only one of `--listen`, `--demo`, and `--lock-test` can be set.
 
 Deaths already in the log when the program starts are skipped. Chat written during a round is skipped when the round ends, so one death does not start a second round.
 
-Press `panic_shortcut` (default `ctrl+alt+f12`) to abort the round and restore input. `--listen` does not lock input.
+Press `panic_shortcut` (default `<ctrl>+<alt>+<f12>`) to abort the round and restore input. `--listen` does not lock input.
 
 ## Score log
 
@@ -101,7 +101,7 @@ No commit. These were read and left out.
 | `threshold_percent` | Minimum score that ends the round. Default 50. |
 | `countdown_seconds` | Seconds to count down before recording. At least 1. |
 | `overlay_port` | Local port for the overlay page and its websocket. |
-| `panic_shortcut` | Keys that release the lock, joined with `+`. Each part is a letter or a key name (`ctrl`, `alt_l`, `f12`, `esc`). A name also matches that name with `_l` or `_r` added. |
+| `panic_shortcut` | pynput hotkey that releases the lock. A special key is wrapped in brackets (`<ctrl>+<alt>+<f12>`, `<esc>`). A character is written as itself. `<ctrl>`, `<alt>`, `<shift>`, and `<cmd>` match either side. |
 
 The built-in matcher covers vanilla English death messages, including item variants such as `using Diamond Sword`.
 
