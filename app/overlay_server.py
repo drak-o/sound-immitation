@@ -3,161 +3,96 @@
 from __future__ import annotations
 
 import asyncio
-import email.utils
 import json
-import logging
+import socket
 import threading
-from pathlib import Path
 
-from websockets.asyncio.server import serve
-from websockets.datastructures import Headers
-from websockets.http11 import Response
+import uvicorn
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from starlette.staticfiles import StaticFiles
+from starlette.types import Scope
 
-_TYPES = {
-    ".html": "text/html; charset=utf-8",
-    ".css": "text/css; charset=utf-8",
-    ".js": "text/javascript; charset=utf-8",
-}
+from app.config import ROOT
+
+
+class _NoStoreFiles(StaticFiles):
+    """Hot reload support for the overlay."""
+
+    async def get_response(self, path: str, scope: Scope):
+        response = await super().get_response(path, scope)
+        response.headers["Cache-Control"] = "no-store"
+        return response
 
 
 class OverlayHub:
-    def __init__(self, directory: Path) -> None:
-        self._directory = directory
-        self._clients: set = set()
-        self._history: list[dict] = []
+    def __init__(self) -> None:
+        self._clients: set[WebSocket] = set()
         self._loop: asyncio.AbstractEventLoop | None = None
-        self._ready = threading.Event()
         self._thread: threading.Thread | None = None
-        self._server = None
-        self._start_error: OSError | None = None
+        self._server: uvicorn.Server | None = None
 
     def start(self, port: int) -> None:
-        logging.getLogger("websockets.server").setLevel(logging.WARNING)
+        try:
+            sock = socket.create_server(("127.0.0.1", port))
+        except OSError as error:
+            raise SystemExit(f"Overlay did not start on port {port}: {error}") from None
+        app = FastAPI(docs_url=None, redoc_url=None, openapi_url=None)
+
+        @app.websocket("/ws")
+        async def browser(websocket: WebSocket) -> None:
+            await websocket.accept()
+            self._clients.add(websocket)
+            try:
+                # The page never sends a frame. The read ends when the browser disconnects.
+                while True:
+                    await websocket.receive_text()
+            except WebSocketDisconnect:
+                pass
+            finally:
+                self._clients.discard(websocket)
+
+        app.mount(
+            "/", _NoStoreFiles(directory=ROOT / "overlay", html=True), name="overlay"
+        )
+        self._server = uvicorn.Server(
+            uvicorn.Config(app, host="127.0.0.1", port=port, log_level="warning")
+        )
         self._loop = asyncio.new_event_loop()
         self._thread = threading.Thread(
-            target=self._run, args=(port,), name="overlay", daemon=True
+            target=self._run, args=(sock,), name="overlay", daemon=True
         )
         self._thread.start()
-        if not self._ready.wait(timeout=5):
-            raise SystemExit(f"Overlay did not start on port {port}.")
-        if self._start_error is not None:
-            raise SystemExit(
-                f"Overlay did not start on port {port}: {self._start_error}"
-            )
 
     def stop(self) -> None:
         """Close the page and the socket. Called when main.py exits."""
-        loop = self._loop
+        server = self._server
         thread = self._thread
-        if loop is None or thread is None or not thread.is_alive():
+        if server is None or thread is None or not thread.is_alive():
             return
-
-        async def _shutdown() -> None:
-            server = self._server
-            if server is not None:
-                server.close()
-                await server.wait_closed()
-
-        future = asyncio.run_coroutine_threadsafe(_shutdown(), loop)
-        try:
-            future.result(timeout=5)
-        except Exception:
-            pass
-        loop.call_soon_threadsafe(loop.stop)
+        server.should_exit = True
         thread.join(timeout=5)
 
     def publish(self, message: dict) -> None:
-        if self._loop is None:
+        loop = self._loop
+        if loop is None:
             return
-        self._loop.call_soon_threadsafe(self._enqueue, message)
+        payload = json.dumps(message)
 
-    def _enqueue(self, message: dict) -> None:
-        self._note(message)
-        asyncio.create_task(self._broadcast(json.dumps(message)))
+        async def send() -> None:
+            stale = []
+            for client in list(self._clients):
+                try:
+                    await client.send_text(payload)
+                except Exception:
+                    stale.append(client)
+            for client in stale:
+                self._clients.discard(client)
 
-    def _note(self, message: dict) -> None:
-        """Keep the messages a late OBS source needs to draw the current frame."""
-        kind = message.get("type")
-        if kind == "idle":
-            self._history = [message]
-        elif kind == "reference":
-            self._history = [message]
-        elif kind == "countdown":
-            self._history = [
-                item for item in self._history if item.get("type") == "reference"
-            ]
-            self._history.append(message)
-        elif kind == "recording":
-            self._history = [
-                item for item in self._history if item.get("type") == "reference"
-            ]
-            self._history.append(message)
-        elif kind == "result":
-            self._history = [
-                item
-                for item in self._history
-                if item.get("type") in ("reference", "recording")
-            ]
-            self._history.append(message)
+        loop.call_soon_threadsafe(lambda: asyncio.create_task(send()))
 
-    async def _broadcast(self, payload: str) -> None:
-        stale = []
-        for client in list(self._clients):
-            try:
-                await client.send(payload)
-            except Exception:
-                stale.append(client)
-        for client in stale:
-            self._clients.discard(client)
-
-    def _run(self, port: int) -> None:
-        assert self._loop is not None
-        asyncio.set_event_loop(self._loop)
-        try:
-            self._loop.run_until_complete(self._start(port))
-        except OSError as error:
-            self._start_error = error
-            self._ready.set()
-            return
-        self._ready.set()
-        self._loop.run_forever()
-
-    async def _start(self, port: int) -> None:
-        self._server = await serve(
-            self._handler, "127.0.0.1", port, process_request=self._http
-        )
-
-    async def _handler(self, websocket) -> None:
-        try:
-            for message in list(self._history):
-                await websocket.send(json.dumps(message))
-            self._clients.add(websocket)
-            await websocket.wait_closed()
-        finally:
-            self._clients.discard(websocket)
-
-    def _http(self, connection, request):
-        path = request.path.split("?", 1)[0]
-        if path == "/ws":
-            return None
-        # The overlay directory is the file list. A copied table goes stale.
-        name = "index.html" if path == "/" else path.removeprefix("/")
-        if name != Path(name).name:
-            return connection.respond(404, "Not found\n")
-        file_path = self._directory / name
-        if not file_path.is_file():
-            return connection.respond(404, "Not found\n")
-        body = file_path.read_bytes()
-        headers = Headers(
-            [
-                ("Date", email.utils.formatdate(usegmt=True)),
-                ("Connection", "close"),
-                ("Content-Length", str(len(body))),
-                (
-                    "Content-Type",
-                    _TYPES.get(file_path.suffix, "application/octet-stream"),
-                ),
-                ("Cache-Control", "no-store"),
-            ]
-        )
-        return Response(200, "OK", headers, body)
+    def _run(self, sock: socket.socket) -> None:
+        server = self._server
+        loop = self._loop
+        assert server is not None and loop is not None
+        asyncio.set_event_loop(loop)
+        loop.run_until_complete(server.serve(sockets=[sock]))

@@ -7,7 +7,7 @@ import sys
 import time
 
 from app.chat import ChatWatch, DeathMatcher
-from app.config import ROOT, Config
+from app.config import Config
 
 
 class App:
@@ -100,7 +100,7 @@ class App:
         from app.score import Scorer
 
         audio = AudioSession(config.sounds_dir, config.countdown_sound)
-        hub = OverlayHub(ROOT / "overlay")
+        hub = OverlayHub()
         self._hub = hub
         hub.start(config.overlay_port)
         return RoundController(config, audio, Scorer(), hub, InputLock())

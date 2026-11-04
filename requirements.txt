@@ -4,4 +4,5 @@ miniaudio
 numpy
 pynput
 scipy
-websockets
+fastapi
+uvicorn[standard]
