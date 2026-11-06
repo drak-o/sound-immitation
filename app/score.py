@@ -4,16 +4,15 @@ from __future__ import annotations
 
 import numpy as np
 
-from app.audio import Clip, Take, resample
+from app.audio import Clip, Take, GENERAL_RATE, resample
 
-_TARGET_RATE = 16000
-_FRAME_SAMPLES = int(_TARGET_RATE * 0.025)
-_HOP_SAMPLES = int(_TARGET_RATE * 0.010)
+_FRAME_SAMPLES = int(GENERAL_RATE * 0.025)
+_HOP_SAMPLES = int(GENERAL_RATE * 0.010)
 
 # Eight log-spaced bands from 80 Hz to 7.6 kHz.
 _BAND_COUNT = 8
 _BAND_EDGES_HZ = np.geomspace(80.0, 7600.0, _BAND_COUNT + 1)
-_BIN_FREQS_HZ = np.fft.rfftfreq(_FRAME_SAMPLES, d=1.0 / _TARGET_RATE)
+_BIN_FREQS_HZ = np.fft.rfftfreq(_FRAME_SAMPLES, d=1.0 / GENERAL_RATE)
 _BAND_BINS: list[np.ndarray] = []
 
 for _band in range(_BAND_COUNT):
@@ -24,13 +23,14 @@ for _band in range(_BAND_COUNT):
     )
     _BAND_BINS.append(np.flatnonzero((_BIN_FREQS_HZ >= _low) & _upper))
 
+
 class Scorer:
     def percent(self, clip: Clip, take: Take) -> float:
         reference_power = _frame_spectra(
-            resample(clip.samples, clip.sample_rate, _TARGET_RATE)
+            resample(clip.samples, clip.sample_rate, GENERAL_RATE)
         )
         recorded_power = _frame_spectra(
-            resample(take.samples, take.sample_rate, _TARGET_RATE)
+            resample(take.samples, take.sample_rate, GENERAL_RATE)
         )
         reference = _log_bands(reference_power)
         recorded = _log_bands(recorded_power)
@@ -39,14 +39,15 @@ class Scorer:
             return 0.0
         similarity = _dtw_similarity(reference, recorded)
         take_flat = float(np.median(_spectral_flatness(recorded_power)))
-        # Herre, Allamanche, and Hellmuth, WASPAA 2001: flatness near 1 is
+        
+		# Herre, Allamanche, and Hellmuth, WASPAA 2001: flatness near 1 is
         # noise. Cosine only sees band direction, so the clipped breath
         # still scored 79% on spongebob. That breath measured 0.55–0.64.
         # Every clip is at most 0.20.
         if take_flat > 0.45:
             similarity = 0.0
         percent = round(max(0.0, similarity) * 100, 1)
-        
+
         # print(f"similarity={similarity:.4f} flatness={take_flat:.2f} percent={percent}") # debug log
         return percent
 
@@ -80,7 +81,14 @@ def _frame_spectra(samples: np.ndarray) -> np.ndarray:
     for index in range(count):
         start = index * _HOP_SAMPLES
         # Hann window so a tone stays in its bands instead of leaking into all of them.
-        power = np.abs(np.fft.rfft(audio[start : start + _FRAME_SAMPLES] * np.hanning(_FRAME_SAMPLES))) ** 2
+        power = (
+            np.abs(
+                np.fft.rfft(
+                    audio[start : start + _FRAME_SAMPLES] * np.hanning(_FRAME_SAMPLES)
+                )
+            )
+            ** 2
+        )
         for band, bins in enumerate(_BAND_BINS):
             spectra[index, band] = float(power[bins].sum()) if bins.size else 0.0
     return spectra
@@ -141,7 +149,7 @@ def _dtw_similarity(reference: np.ndarray, take: np.ndarray) -> float:
     rec = np.asarray(take, dtype=np.float64)
     row_count = ref.shape[0]
     column_count = rec.shape[0]
-    band = 8 # 10 ms frames. 80 ms of warp: a small slip still matches, a late start does not?
+    band = 8  # 10 ms frames. 80 ms of warp: a small slip still matches, a late start does not?
     cost = np.full((row_count + 1, column_count + 1), np.inf, dtype=np.float64)
     cost[0, 0] = 0.0
     for row in range(1, row_count + 1):

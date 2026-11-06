@@ -88,7 +88,7 @@ def _score(
     stem: str, case: str, clip: Clip, samples: np.ndarray, rate: int, predicted: bool
 ) -> None:
     """The percent is kept for the rates."""
-    take = Take(samples=np.asarray(samples), sample_rate=rate, peaks=[])
+    take = Take(samples=np.asarray(samples), sample_rate=rate)
     percent = _SCORER.percent(clip, take)
 
     actual = percent >= PASS_PERCENT

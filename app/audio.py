@@ -15,7 +15,9 @@ import soundfile as sf
 from scipy.signal import resample as scipy_resample
 
 # Horizontal buckets on the overlay waveform. Not samples, and not samples per second.
-OVERLAY_COLUMN_COUNT = 400
+_OVERLAY_COLUMN_COUNT = 400
+# Drawing and scoring both use this rate, so a column is the same slice of the second.
+GENERAL_RATE = 16000
 _AUDIO_EXTENSIONS = {".wav", ".flac", ".ogg", ".mp3"}
 
 
@@ -31,10 +33,10 @@ class Clip:
 class Take:
     samples: np.ndarray
     sample_rate: int
-    peaks: list[float | None]
 
 
 def resample(samples: np.ndarray, source_rate: int, target_rate: int) -> np.ndarray:
+    """we must resample to ensure the audio is processed at the same rate as the reference clip"""
     audio = np.asarray(samples, dtype=np.float64)
     if audio.size == 0 or source_rate == target_rate:
         return audio
@@ -42,36 +44,17 @@ def resample(samples: np.ndarray, source_rate: int, target_rate: int) -> np.ndar
     return scipy_resample(audio, target_length)
 
 
-def waveform_columns(
-    samples: np.ndarray, filled_ratio: float = 1.0
-) -> list[float | None]:
-    """Peak columns on one shared timeline.
-
-    A partial take fills only the left-hand columns. Column i is the same
-    slice of the full duration for both the reference and the live take.
-    """
-    columns: list[float | None] = [None] * OVERLAY_COLUMN_COUNT
+def waveform_columns(samples: np.ndarray) -> list[float]:
+    """Peak of each overlay column. `samples` is the whole timeline at 16 kHz."""
     count = int(samples.shape[0])
-    if count == 0 or filled_ratio <= 0:
-        return columns
-    filled = (
-        OVERLAY_COLUMN_COUNT
-        if filled_ratio >= 1
-        else int(filled_ratio * OVERLAY_COLUMN_COUNT)
-    )
-    if filled <= 0:
-        return columns
-    peaks = np.zeros(filled, dtype=np.float64)
-    for index in range(filled):
-        start = int(index * count / filled)
-        end = max(start + 1, int((index + 1) * count / filled))
-        peaks[index] = float(np.max(np.abs(samples[start:end])))
-    scale = float(peaks.max())
-    if scale > 1e-8:
-        peaks /= scale
-    for index, value in enumerate(peaks):
-        columns[index] = float(value)
-    return columns
+    if count == 0:
+        return [0.0] * _OVERLAY_COLUMN_COUNT
+    starts = np.linspace(0, count, _OVERLAY_COLUMN_COUNT + 1, dtype=int)[
+        :-1
+    ]  # basically a for loop creating a 400 array of indexes
+    return np.maximum.reduceat(
+        np.abs(samples), starts
+    ).tolist()  # fit the samples into the 400 array of indexes
 
 
 def _load_samples(path: Path) -> tuple[np.ndarray, int]:
@@ -93,6 +76,25 @@ def _load_samples(path: Path) -> tuple[np.ndarray, int]:
     if samples.size == 0 or rate <= 0:
         raise RuntimeError(f"Could not read audio from {path}")
     return samples, rate
+
+
+def _drop_quiet_lead_in(samples: np.ndarray, rate: int) -> np.ndarray:
+    """2% of the peak, held for 10 ms, is the start of the sound.
+
+    Playback then begins on the countdown instead of after a gap.
+    """
+    peak = float(np.max(np.abs(samples)))
+    window = max(1, int(rate * 0.01))
+    if peak > 1e-8 and samples.size > window:
+        amplitude = np.abs(samples.astype(np.float64))
+        cumulative = np.cumsum(amplitude)
+        level = (
+            cumulative[window - 1 :] - np.concatenate([[0.0], cumulative[:-window]])
+        ) / window
+        loud = np.flatnonzero(level >= peak * 0.02)
+        if loud.size:
+            return samples[int(loud[0]) :]
+    return samples
 
 
 class AudioSession:
@@ -129,24 +131,9 @@ class AudioSession:
             raise SystemExit(f"No audio files in {directory}")
         path = random.choice(files)
         samples, rate = _load_samples(path)
-        # Cut the quiet lead-in. 2% of the peak, held for 10 ms, is the start of
-        # the sound, so playback begins on the countdown instead of after a gap.
-		# dont like this could be lazy and just check none
-        peak = float(np.max(np.abs(samples)))
-        window = max(1, int(rate * 0.01))
-        if peak > 1e-8 and samples.size > window:
-            amplitude = np.abs(samples.astype(np.float64))
-            cumulative = np.cumsum(amplitude)
-            level = (
-                cumulative[window - 1 :] - np.concatenate([[0.0], cumulative[:-window]])
-            ) / window
-            loud = np.flatnonzero(level >= peak * 0.02)
-            if loud.size:
-                samples = samples[int(loud[0]) :]
+        samples = _drop_quiet_lead_in(samples, rate)
         duration_ms = max(1, int(round(samples.shape[0] / rate * 1000)))
-        peaks = [
-            value if value is not None else 0.0 for value in waveform_columns(samples)
-        ]
+        peaks = waveform_columns(resample(samples, rate, GENERAL_RATE))
         return Clip(
             samples=samples, sample_rate=rate, duration_ms=duration_ms, peaks=peaks
         )
@@ -207,8 +194,8 @@ class AudioSession:
 
     def record(
         self,
-        duration_ms: int,
-        on_peaks: Callable[[list[float | None]], None],
+        clip: Clip,
+        on_peaks: Callable[[list[float]], None],
         abort: threading.Event,
     ) -> Take:
         try:
@@ -216,11 +203,16 @@ class AudioSession:
             in_rate = int(
                 round(float(sd.query_devices(kind="input")["default_samplerate"]))
             )
-            frames_total = max(1, int(round(in_rate * duration_ms / 1000)))
+            frames_total = max(1, int(round(in_rate * clip.duration_ms / 1000)))
             # 0.05 seconds of audio per read. Abort is checked 20 times a second.
             chunk = max(1, int(in_rate * 0.05))
             collected = np.empty(frames_total, dtype=np.float32)
             captured = 0
+            # Same length resample() gives the reference, so both waves share column edges.
+            timeline = max(
+                1, int(round(clip.samples.shape[0] * GENERAL_RATE / clip.sample_rate))
+            )
+            drawn = np.zeros(timeline, dtype=np.float64)
             with sd.InputStream(
                 samplerate=in_rate,
                 channels=1,
@@ -235,16 +227,13 @@ class AudioSession:
                     mono = np.asarray(data, dtype=np.float32).reshape(-1)[:frames]
                     collected[captured : captured + mono.shape[0]] = mono
                     captured += int(mono.shape[0])
-                    on_peaks(
-                        waveform_columns(collected[:captured], captured / frames_total)
-                    )
+                    # The whole prefix, so earlier columns stay put as the take grows.
+                    converted = resample(collected[:captured], in_rate, GENERAL_RATE)
+                    n = min(int(converted.shape[0]), timeline)
+                    drawn[:n] = converted[:n]
+                    drawn[n:] = 0
+                    on_peaks(waveform_columns(drawn))
         except sd.PortAudioError as error:
             raise SystemExit(f"Recording failed: {error}") from error
         samples = collected[:captured].copy()
-        return Take(
-            samples=samples,
-            sample_rate=in_rate,
-            peaks=waveform_columns(
-                samples, 1.0 if captured >= frames_total else captured / frames_total
-            ),
-        )
+        return Take(samples=samples, sample_rate=in_rate)

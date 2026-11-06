@@ -24,14 +24,9 @@ Add the overlay URL as a browser source in OBS. The port is `overlay_port` in `c
 
 ## Commands
 
-| Command | What it does |
-| --- | --- |
+| Command          | What it does                                              |
+| ---------------- | --------------------------------------------------------- |
 | `python main.py` | Tail `latest.log` and start a locked round on your death. |
-| `python main.py --demo` | Play one random clip, count down, record, and score. Input stays unlocked. |
-| `python main.py --listen` | Print each chat line as `death` or `ignore`. |
-| `python main.py --lock-test` | Lock input for 5 seconds, or until the panic shortcut. |
-
-Only one of `--listen`, `--demo`, and `--lock-test` can be set.
 
 ## A round
 
@@ -45,7 +40,7 @@ Only one of `--listen`, `--demo`, and `--lock-test` can be set.
 
 Deaths already in the log when the program starts are skipped. Chat written during a round is skipped when the round ends, so one death does not start a second round.
 
-Press `panic_shortcut` (default `<ctrl>+<alt>+<f12>`) to abort the round and restore input. `--listen` does not lock input.
+Press `panic_shortcut` (default `<ctrl>+<alt>+<f12>`) to abort the round and restore input.
 
 ## Score log
 
@@ -92,16 +87,16 @@ No commit. These were read and left out.
 
 `config.json` sits next to `main.py`.
 
-| Key | Meaning |
-| --- | --- |
-| `player_name` | Minecraft name. Death lines must start with this name. |
-| `log_path` | Path to `latest.log`. |
-| `sounds_dir` | Folder of reference clips. Relative paths are resolved from the config file. |
-| `countdown_sound` | Clip used for each countdown tick, or `null` for the built-in beep. |
-| `threshold_percent` | Minimum score that ends the round. Default 50. |
-| `countdown_seconds` | Seconds to count down before recording. At least 1. |
-| `overlay_port` | Local port for the overlay page and its websocket. |
-| `panic_shortcut` | pynput hotkey that releases the lock. A special key is wrapped in brackets (`<ctrl>+<alt>+<f12>`, `<esc>`). A character is written as itself. `<ctrl>`, `<alt>`, `<shift>`, and `<cmd>` match either side. |
+| Key                 | Meaning                                                                                                                                                                                                    |
+| ------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `player_name`       | Minecraft name. Death lines must start with this name.                                                                                                                                                     |
+| `log_path`          | Path to `latest.log`.                                                                                                                                                                                      |
+| `sounds_dir`        | Folder of reference clips. Relative paths are resolved from the config file.                                                                                                                               |
+| `countdown_sound`   | Clip used for each countdown tick, or `null` for the built-in beep.                                                                                                                                        |
+| `threshold_percent` | Minimum score that ends the round. Default 50.                                                                                                                                                             |
+| `countdown_seconds` | Seconds to count down before recording. At least 1.                                                                                                                                                        |
+| `overlay_port`      | Local port for the overlay page and its websocket.                                                                                                                                                         |
+| `panic_shortcut`    | pynput hotkey that releases the lock. A special key is wrapped in brackets (`<ctrl>+<alt>+<f12>`, `<esc>`). A character is written as itself. `<ctrl>`, `<alt>`, `<shift>`, and `<cmd>` match either side. |
 
 The built-in matcher covers vanilla English death messages, including item variants such as `using Diamond Sword`.
 

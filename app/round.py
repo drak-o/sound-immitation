@@ -1,11 +1,11 @@
-"""One imitation attempt, or a locked retry until the score passes."""
+"""Locked retries of one clip until the score passes."""
 
 from __future__ import annotations
 
 import threading
 import time
 
-from app.audio import OVERLAY_COLUMN_COUNT, AudioSession, Clip
+from app.audio import AudioSession, Clip
 from app.config import Config
 from app.input_lock import InputLock
 from app.overlay_server import OverlayHub
@@ -28,16 +28,6 @@ class RoundController:
         self._scorer = scorer
         self._hub = hub
         self._lock = lock
-
-    def run_demo(self) -> None:
-        abort = threading.Event()
-        try:
-            clip = self._audio.pick_random()
-            percent = self._one_take(clip, 1, abort)
-            print(f"passed={percent >= self._config.threshold_percent}")
-            self._hold(abort)
-        finally:
-            self._hub.publish({"type": "idle"})
 
     def run_locked(self) -> None:
         self._lock.start(self._config.panic_shortcut)
@@ -78,14 +68,13 @@ class RoundController:
         )
         if abort.is_set():
             return 0.0
-        self._hub.publish(
-            {"type": "recording", "livePeaks": [None] * OVERLAY_COLUMN_COUNT}
-        )
+        self._hub.publish({"type": "recording", "livePeaks": None})
 
-        def on_peaks(peaks: list[float | None]) -> None:
+        def on_peaks(peaks: list[float]) -> None:
+            """when a peak is ready this runs"""
             self._hub.publish({"type": "recording", "livePeaks": peaks})
 
-        take = self._audio.record(clip.duration_ms, on_peaks, abort)
+        take = self._audio.record(clip, on_peaks, abort)
         if abort.is_set() or take.samples.size == 0:
             return 0.0
         percent = self._scorer.percent(clip, take)
