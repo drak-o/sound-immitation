@@ -75,6 +75,9 @@ def _load_samples(path: Path) -> tuple[np.ndarray, int]:
         rate = int(rate)
     if samples.size == 0 or rate <= 0:
         raise RuntimeError(f"Could not read audio from {path}")
+    # One second is the shortest file accepted. A shorter one is not a round.
+    if samples.shape[0] < rate:
+        raise RuntimeError(f"{path} is under 1 second.")
     return samples, rate
 
 

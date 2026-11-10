@@ -6,23 +6,6 @@ import numpy as np
 
 from app.audio import Clip, Take, GENERAL_RATE, resample
 
-_FRAME_SAMPLES = int(GENERAL_RATE * 0.025)
-_HOP_SAMPLES = int(GENERAL_RATE * 0.010)
-
-# Eight log-spaced bands from 80 Hz to 7.6 kHz.
-_BAND_COUNT = 8
-_BAND_EDGES_HZ = np.geomspace(80.0, 7600.0, _BAND_COUNT + 1)
-_BIN_FREQS_HZ = np.fft.rfftfreq(_FRAME_SAMPLES, d=1.0 / GENERAL_RATE)
-_BAND_BINS: list[np.ndarray] = []
-
-for _band in range(_BAND_COUNT):
-    _low = _BAND_EDGES_HZ[_band]
-    _high = _BAND_EDGES_HZ[_band + 1]
-    _upper = (
-        _BIN_FREQS_HZ <= _high if _band == _BAND_COUNT - 1 else _BIN_FREQS_HZ < _high
-    )
-    _BAND_BINS.append(np.flatnonzero((_BIN_FREQS_HZ >= _low) & _upper))
-
 
 class Scorer:
     def percent(self, clip: Clip, take: Take) -> float:
@@ -39,8 +22,8 @@ class Scorer:
             return 0.0
         similarity = _dtw_similarity(reference, recorded)
         take_flat = float(np.median(_spectral_flatness(recorded_power)))
-        
-		# Herre, Allamanche, and Hellmuth, WASPAA 2001: flatness near 1 is
+
+        # Herre, Allamanche, and Hellmuth, WASPAA 2001: flatness near 1 is
         # noise. Cosine only sees band direction, so the clipped breath
         # still scored 79% on spongebob. That breath measured 0.55–0.64.
         # Every clip is at most 0.20.
@@ -67,29 +50,54 @@ def _spectral_flatness(power: np.ndarray) -> np.ndarray:
     return geometric / np.maximum(arithmetic, 1e-20)
 
 
-def _frame_spectra(samples: np.ndarray) -> np.ndarray:
-    """Eight band energies per 25 ms frame, hopped every 10 ms."""
-    audio = np.asarray(samples, dtype=np.float64)
-    if audio.size == 0:
-        return np.zeros((0, _BAND_COUNT), dtype=np.float64)
-    if audio.size < _FRAME_SAMPLES:
-        padded = np.zeros(_FRAME_SAMPLES, dtype=np.float64)
-        padded[: audio.size] = audio
-        audio = padded
-    count = 1 + (audio.size - _FRAME_SAMPLES) // _HOP_SAMPLES
-    spectra = np.empty((count, _BAND_COUNT), dtype=np.float64)
+def _frame_spectra(audio: np.ndarray) -> np.ndarray:
+    """
+    Eight band energies per 25 ms frame, hopped every 10 ms.
+
+    Seyerlehner, Widmer, and Knees, "Frame Level Audio Similarity — A
+    Codebook Approach," Proc. DAFx-08, Espoo, 2008, section 3.2,
+    https://www.cp.jku.at/research/papers/Seyerlehner_etal_DAFx_2008.pdf
+    A Hann window, the power spectrum, and the bins summed on a log
+    frequency scale. Their sizes are not these: 2048 samples at 11 kHz,
+    a hop of 256, and 25-cent bands.
+    """
+
+    frame_samples = int(GENERAL_RATE * 0.025)
+    hop_samples = int(GENERAL_RATE * 0.010)
+    # Eight log-spaced bands from 80 Hz to 7.6 kHz.
+    band_count = 8
+    band_edges_hz = np.geomspace(80.0, 7600.0, band_count + 1)
+    bin_freqs_hz = np.fft.rfftfreq(frame_samples, d=1.0 / GENERAL_RATE)
+    band_bins: list[np.ndarray] = []
+    for band in range(band_count):
+        high = band_edges_hz[band + 1]
+        # 7.6 kHz lands on a bin, so the last band includes its top edge.
+        band_bins.append(
+            np.flatnonzero(
+                (bin_freqs_hz >= band_edges_hz[band])
+                & (
+                    bin_freqs_hz <= high
+                    if band == band_count - 1
+                    else bin_freqs_hz < high
+                )
+            )
+        )
+
+    # normalize the last sample that still has 400 samples in front of it which we floor divide by hop_samples
+    count = 1 + (audio.size - frame_samples) // hop_samples
+    spectra = np.empty((count, band_count))
     for index in range(count):
-        start = index * _HOP_SAMPLES
+        start = index * hop_samples
         # Hann window so a tone stays in its bands instead of leaking into all of them.
         power = (
             np.abs(
                 np.fft.rfft(
-                    audio[start : start + _FRAME_SAMPLES] * np.hanning(_FRAME_SAMPLES)
+                    audio[start : start + frame_samples] * np.hanning(frame_samples)
                 )
             )
             ** 2
         )
-        for band, bins in enumerate(_BAND_BINS):
+        for band, bins in enumerate(band_bins):
             spectra[index, band] = float(power[bins].sum()) if bins.size else 0.0
     return spectra
 
