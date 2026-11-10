@@ -9,25 +9,20 @@ from app.audio import Clip, Take, GENERAL_RATE, resample
 
 class Scorer:
     def percent(self, clip: Clip, take: Take) -> float:
-        reference_power = _frame_spectra(
+        _, reference_log_bands = _frame_spectra(
             resample(clip.samples, clip.sample_rate, GENERAL_RATE)
         )
-        recorded_power = _frame_spectra(
+        recorded_spectra, recorded_log_bands = _frame_spectra(
             resample(take.samples, take.sample_rate, GENERAL_RATE)
         )
-        reference = _log_bands(reference_power)
-        recorded = _log_bands(recorded_power)
-        if recorded.shape[0] == 0 or reference.shape[0] == 0:
-            # print("similarity=0.0000 percent=0.0") # debug log
-            return 0.0
-        similarity = _dtw_similarity(reference, recorded)
-        take_flat = float(np.median(_spectral_flatness(recorded_power)))
+        similarity = _dtw_similarity(reference_log_bands, recorded_log_bands)
+        take_flat = _spectral_flatness(recorded_spectra)
 
         # Herre, Allamanche, and Hellmuth, WASPAA 2001: flatness near 1 is
         # noise. Cosine only sees band direction, so the clipped breath
         # still scored 79% on spongebob. That breath measured 0.55–0.64.
         # Every clip is at most 0.20.
-        if take_flat > 0.45:
+        if take_flat > 0.5:
             similarity = 0.0
         percent = round(max(0.0, similarity) * 100, 1)
 
@@ -35,7 +30,7 @@ class Scorer:
         return percent
 
 
-def _spectral_flatness(power: np.ndarray) -> np.ndarray:
+def _spectral_flatness(spectra: np.ndarray) -> np.ndarray:
     """Geometric mean over arithmetic mean of the eight bands, per frame.
 
     Herre, Allamanche, and Hellmuth, "Robust Matching of Audio Signals
@@ -44,10 +39,10 @@ def _spectral_flatness(power: np.ndarray) -> np.ndarray:
 
     hmm why does this have only 8 bands? if we used 16 bands, would we get a better accuracy?
     """
-    floored = np.maximum(power, 1e-20)
+    floored = np.maximum(spectra, 1e-20)
     geometric = np.exp(np.mean(np.log(floored), axis=1))
     arithmetic = np.mean(floored, axis=1)
-    return geometric / np.maximum(arithmetic, 1e-20)
+    return float(geometric / np.maximum(arithmetic, 1e-20))
 
 
 def _frame_spectra(audio: np.ndarray) -> np.ndarray:
@@ -89,6 +84,8 @@ def _frame_spectra(audio: np.ndarray) -> np.ndarray:
     for index in range(count):
         start = index * hop_samples
         # Hann window so a tone stays in its bands instead of leaking into all of them.
+		# basically hanning then fast fourier transform and then square the result
+		# the absolute to get rid of the imaginary part?
         power = (
             np.abs(
                 np.fft.rfft(
@@ -99,7 +96,7 @@ def _frame_spectra(audio: np.ndarray) -> np.ndarray:
         )
         for band, bins in enumerate(band_bins):
             spectra[index, band] = float(power[bins].sum()) if bins.size else 0.0
-    return spectra
+    return spectra, _log_bands(spectra)
 
 
 def _log_bands(spectra: np.ndarray) -> np.ndarray:

@@ -107,3 +107,12 @@ Copyright (C) 2026 drak-o
 Sound imitation is free software: you can redistribute it and/or modify it under the terms of the GNU General Public License as published by the Free Software Foundation, either version 3 of the License, or (at your option) any later version.
 
 The license text is in [LICENSE](LICENSE).
+
+# study approach
+
+the same approach you used for bompa is used here:
+
+- generate podcast text.
+- TTS using piper.
+- Listen to podcast. (exposure, scope)
+- Read + take notes + flashcards. (retention)
