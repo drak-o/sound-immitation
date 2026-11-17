@@ -11,12 +11,6 @@ class Scorer:
     def percent(self, clip: Clip, take: Take) -> float:
         actual = _loudness(resample(clip.samples, clip.sample_rate, GENERAL_RATE))
         imitation = _loudness(resample(take.samples, take.sample_rate, GENERAL_RATE))
-        # Frame 1 of the imitation against frame 1 of the actual sound.
-        count = min(actual.size, imitation.size)
-        if count == 0:
-            return 0.0
-        actual = actual[:count]
-        imitation = imitation[:count]
         # Both silent is zero over zero. Counting it as a match would let a
         # silent imitation score the quiet fraction of the actual sound.
         heard = np.maximum(actual, imitation) > 0
@@ -24,7 +18,7 @@ class Scorer:
             return 0.0
         ratio = np.minimum(actual[heard], imitation[heard]) / np.maximum(
             actual[heard], imitation[heard]
-        )
+        ) # vectorized comparison of the two arrays
         return round(float(np.mean(ratio)) * 100, 1)
 
 

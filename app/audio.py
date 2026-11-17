@@ -88,7 +88,7 @@ def _drop_quiet_lead_in(samples: np.ndarray, rate: int) -> np.ndarray:
     """
     peak = float(np.max(np.abs(samples)))
     window = max(1, int(rate * 0.01))
-    if peak > 1e-8 and samples.size > window:
+    if peak > 1e-8:
         amplitude = np.abs(samples.astype(np.float64))
         cumulative = np.cumsum(amplitude)
         level = (

@@ -88,7 +88,17 @@ def _score(
     stem: str, case: str, clip: Clip, samples: np.ndarray, rate: int, predicted: bool
 ) -> None:
     """The percent is kept for the rates."""
-    take = Take(samples=np.asarray(samples), sample_rate=rate)
+	# percent pairs frame i with frame i. The take is cut or padded to the clip.
+	# Cutting pairs to the shorter length would have passed easily: a 1 s take of a 9 s
+	# this is necessary to prevent out of bounds errors when the take is longer than the clip
+    length = int(round(clip.samples.shape[0] * rate / clip.sample_rate))
+    if samples.shape[0] > length:
+        samples = samples[:length]
+    elif samples.shape[0] < length:
+        samples = np.concatenate(
+            [samples, np.zeros(length - samples.shape[0], dtype=samples.dtype)]
+        )
+    take = Take(samples=samples, sample_rate=rate)
     percent = _SCORER.percent(clip, take)
 
     actual = percent >= PASS_PERCENT
