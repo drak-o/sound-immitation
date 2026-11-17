@@ -18,7 +18,7 @@ class Scorer:
             return 0.0
         ratio = np.minimum(actual[heard], imitation[heard]) / np.maximum(
             actual[heard], imitation[heard]
-        ) # vectorized comparison of the two arrays
+        ) # vectorized comparison of the two arrays, min-max normalization, values in 0,1 range
         return round(float(np.mean(ratio)) * 100, 1)
 
 
@@ -33,9 +33,8 @@ def _loudness(audio: np.ndarray) -> np.ndarray:
     is that sum divided by the fixed frame length. They use the energy to
     find endpoints. Here it is the whole description of the sound.
     """
-    samples = np.asarray(audio, dtype=np.float64)
     frame = int(GENERAL_RATE * 0.01)
-    usable = samples.size - (samples.size % frame)
+    usable = audio.size - (audio.size % frame)
     if usable < frame:
         return np.zeros(0, dtype=np.float64)
-    return np.mean(np.abs(samples[:usable]).reshape(-1, frame), axis=1)
+    return np.mean(np.abs(audio[:usable]).reshape(-1, frame), axis=1)

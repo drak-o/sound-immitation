@@ -45,7 +45,11 @@ def resample(samples: np.ndarray, source_rate: int, target_rate: int) -> np.ndar
 
 
 def waveform_columns(samples: np.ndarray) -> list[float]:
-    """Peak of each overlay column. `samples` is the whole timeline at 16 kHz."""
+    """Peak of each overlay column. `samples` is the whole timeline.
+
+    A partial take stays full length, with the unread tail left at zero.
+    Passing only the prefix would stretch those samples across every column.
+    """
     count = int(samples.shape[0])
     if count == 0:
         return [0.0] * _OVERLAY_COLUMN_COUNT
@@ -209,13 +213,9 @@ class AudioSession:
             frames_total = max(1, int(round(in_rate * clip.duration_ms / 1000)))
             # 0.05 seconds of audio per read. Abort is checked 20 times a second.
             chunk = max(1, int(in_rate * 0.05))
-            collected = np.empty(frames_total, dtype=np.float32)
+            # Tail stays zero so the unread part of the overlay stays flat.
+            collected = np.zeros(frames_total, dtype=np.float32)
             captured = 0
-            # Same length resample() gives the reference, so both waves share column edges.
-            timeline = max(
-                1, int(round(clip.samples.shape[0] * GENERAL_RATE / clip.sample_rate))
-            )
-            drawn = np.zeros(timeline, dtype=np.float64)
             with sd.InputStream(
                 samplerate=in_rate,
                 channels=1,
@@ -230,12 +230,7 @@ class AudioSession:
                     mono = np.asarray(data, dtype=np.float32).reshape(-1)[:frames]
                     collected[captured : captured + mono.shape[0]] = mono
                     captured += int(mono.shape[0])
-                    # The whole prefix, so earlier columns stay put as the take grows.
-                    converted = resample(collected[:captured], in_rate, GENERAL_RATE)
-                    n = min(int(converted.shape[0]), timeline)
-                    drawn[:n] = converted[:n]
-                    drawn[n:] = 0
-                    on_peaks(waveform_columns(drawn))
+                    on_peaks(waveform_columns(collected))
         except sd.PortAudioError as error:
             raise SystemExit(f"Recording failed: {error}") from error
         samples = collected[:captured].copy()
