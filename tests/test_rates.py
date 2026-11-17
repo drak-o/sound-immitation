@@ -127,7 +127,7 @@ def setUpModule() -> None:
     _CLIPS.clear()
     _RECORDINGS.clear()
 
-    # Load recordings from tests/recordings/ into _RECORDINGS 
+    # Load recordings from tests/recordings/ into _RECORDINGS
     recordings = ROOT / "tests" / "recordings"
     if recordings.is_dir():
         for path in recordings.iterdir():
@@ -226,8 +226,9 @@ class ImitationTest(unittest.TestCase):
 
     def test_same_sound_started_late(self) -> None:
         for stem, samples, rate, clip in _CLIPS:
-            # 200 ms of silence in front. That is past the 80 ms warp. The end
-            # is trimmed so the take stays the length of the clip.
+            # 200 ms of silence in front. The loud frames no longer sit on each
+            # other, so the mean ratio drops. The end is trimmed so the take
+            # stays the length of the clip.
             shift = int(round(rate * 0.2))
             late = np.concatenate([np.zeros(shift, dtype=samples.dtype), samples])[
                 : samples.shape[0]

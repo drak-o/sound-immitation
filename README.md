@@ -35,7 +35,7 @@ Add the overlay URL as a browser source in OBS. The port is `overlay_port` in `c
 3. A random clip plays, with its quiet lead-in cut off.
 4. A countdown beeps once per second. Each beep is a short built-in tone, or the first 0.3 seconds of `countdown_sound` when that path is set.
 5. The microphone records for the length of the clip.
-6. The score is a time-aligned spectral similarity, printed as a percentage. A take that is mostly noise scores 0.
+6. The score is the mean of the per-frame loudness ratios, printed as a percentage.
 7. At or above `threshold_percent`, the lock releases. Below it, the same clip plays again.
 
 Deaths already in the log when the program starts are skipped. Chat written during a round is skipped when the round ends, so one death does not start a second round.
@@ -44,7 +44,7 @@ Press `panic_shortcut` (default `<ctrl>+<alt>+<f12>`) to abort the round and res
 
 ## Score log
 
-The pass line is `threshold_percent`, default 70. The percentage is the mean similarity of frames along a time warp. Each entry is the commit that put that comparison in `app/score.py`, the check that was run, and why it stayed or was thrown out. `6ea0134` ("license") only added the license lines and is not a scoring change.
+The pass line is `threshold_percent`, default 70. The percentage is the mean of the per-frame loudness ratios. Each entry is the commit that put that comparison in `app/score.py`, the check that was run, and why it stayed or was thrown out. `6ea0134` ("license") only added the license lines and is not a scoring change.
 
 ### `f537911` — failed
 
@@ -66,7 +66,7 @@ Tested on real microphone takes against the clips. Scores landed about 25–57, 
 
 ### `1028b2d` — held
 
-2026-10-17, "fix breath". This is the scorer that is in the tree now. The same eight bands, converted with `20 log10` and with the frame mean subtracted, compared again with cosine. The 80 ms warp stays. A take whose median spectral flatness is above 0.45 scores 0.
+2026-10-17, "fix breath". This was the scorer until the loudness-ratio change. The same eight bands, converted with `20 log10` and with the frame mean subtracted, compared again with cosine. The 80 ms warp stays. A take whose median spectral flatness is above 0.45 scores 0.
 
 Tested in `Scorer` on the four clips in `sounds/`:
 
