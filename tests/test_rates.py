@@ -3,9 +3,9 @@
 A plausible imitation is a microphone take in tests/recordings/ named the
 same as the clip. It is a genuine pair: a person making the clip, expected
 to pass.
-Breathing and tapping are one file each in tests/recordings/, named
-breathing and tapping. Each is an incorrect pair against every clip. Pass
-is a score of 50 or higher.
+Breathing, tapping, and nothing are one file each in tests/recordings/,
+named breathing, tapping, and nothing. Each is an incorrect pair against
+every clip. Pass is a score of 50 or higher.
 Each trial is written to tests/battery.log as the percent and the booleans
 predicted and actual. Actual is true when the percent is 50 or higher.
 """
@@ -190,8 +190,9 @@ def tearDownModule() -> None:
 
 class ImitationTest(unittest.TestCase):
     def test_nothing(self) -> None:
-        for stem, samples, rate, clip in _CLIPS:
-            _score(stem, "nothing", clip, np.zeros_like(samples), rate, False)
+        recorded, recorded_rate = _shared("nothing")
+        for stem, _, _, clip in _CLIPS:
+            _score(stem, "nothing", clip, recorded, recorded_rate, False)
 
     def test_same_sound(self) -> None:
         for stem, samples, rate, clip in _CLIPS:

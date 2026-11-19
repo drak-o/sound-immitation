@@ -35,53 +35,26 @@ Add the overlay URL as a browser source in OBS. The port is `overlay_port` in `c
 3. A random clip plays, with its quiet lead-in cut off.
 4. A countdown beeps once per second. Each beep is a short built-in tone, or the first 0.3 seconds of `countdown_sound` when that path is set.
 5. The microphone records for the length of the clip.
-6. The score is the mean of the per-frame loudness ratios, printed as a percentage.
+6. The score is the mean of the per-frame loudness ratios, as a percentage. Both sounds are resampled to 16 kHz. Each frame is the mean absolute level over 10 ms, and where either frame is audible the ratio is the quieter level divided by the louder one. The overlay shows the percentage with the pass or fail result.
 7. At or above `threshold_percent`, the lock releases. Below it, the same clip plays again.
 
 Deaths already in the log when the program starts are skipped. Chat written during a round is skipped when the round ends, so one death does not start a second round.
 
 Press `panic_shortcut` (default `<ctrl>+<alt>+<f12>`) to abort the round and restore input.
 
-## Score log
+## Testing
 
-The pass line is `threshold_percent`, default 70. The percentage is the mean of the per-frame loudness ratios. Each entry is the commit that put that comparison in `app/score.py`, the check that was run, and why it stayed or was thrown out. `6ea0134` ("license") only added the license lines and is not a scoring change.
+The imitation battery is `tests/test_rates.py`. It scores every clip in `sounds/` and writes each result to `tests/battery.log`. Unittest's own progress stays on the console.
 
-### `f537911` — failed
+```bash
+python -m unittest tests.test_rates
+```
 
-2026-10-17, "pre refactor". This commit adds `app/score.py`. Each clip and each take is an amplitude envelope, aligned with dynamic time warping over 20% of the longer envelope, then scored with Pearson correlation.
+Pass inside the test is 50. That line is fixed in the test file. It does not read `threshold_percent`.
 
-Tested by tapping along with a rhythmic clip. The taps cleared the pass line. A tap train has the same loudness shape as the clip, so the warp treated tapping the desk as an imitation.
+Eight cases. A genuine pair is expected to pass: the clip against itself, the same clip with a little hiss, and a microphone take in `tests/recordings/` whose file name matches the clip. An impostor is expected to fail: a microphone recording of nothing, a 440 Hz tone, the same clip started 200 ms late, and the shared `breathing` and `tapping` recordings scored against every clip. A missing `nothing`, `breathing`, or `tapping` file skips that case. If no recording shares a clip's name, the plausible case is skipped.
 
-### `8d71c34` — failed
-
-2026-10-17, "up". Replaces the envelope with eight log-spaced band energies from 80 Hz to 7.6 kHz. Each frame is divided so the bands sum to 1, and frames are compared with cosine similarity. The warp stays at 20% of the longer clip.
-
-This stopped the taps. A tap fills every band, and a voice or a tone keeps its energy in a few. It failed a breath. A breath also covers every band, and cosine still counted that as a match against a clip that uses only some of the bands. That is the reason recorded in the next commit.
-
-### `38b4d9a` — failed
-
-2026-10-17, "breath fix". Replaces cosine with histogram intersection, and narrows the warp from 20% of the clip to 80 ms, so a small slip still matches and a late start does not.
-
-Tested on real microphone takes against the clips. Scores landed about 25–57, under the pass line. On two histograms with the same bin sum, intersection is half an L1 distance, so noise in bands the clip leaves empty took about half the score away from a real imitation.
-
-### `1028b2d` — held
-
-2026-10-17, "fix breath". This was the scorer until the loudness-ratio change. The same eight bands, converted with `20 log10` and with the frame mean subtracted, compared again with cosine. The 80 ms warp stays. A take whose median spectral flatness is above 0.45 scores 0.
-
-Tested in `Scorer` on the four clips in `sounds/`:
-
-- Each clip against itself, and against the same samples at 0.15 gain: both near 100. An exact copy is 100 because the cosine of a vector with itself is 1. A gain is a constant in decibels, so subtracting the frame mean keeps the quiet copy on that same vector.
-- Each clip against broadband noise of the same length: under 70.
-- A pure tone against that noise: under 70.
-
-Cosine alone still passed a clipped breath, at 79% against the Spongebob clip. Cosine only sees which bands are strong relative to each other, and that breath pointed the same way. Its flatness (geometric mean of the eight bands divided by their arithmetic mean) was 0.55–0.64. Every reference clip is at most 0.20. The 0.45 gate sits between those two measurements, so that breath scores 0. Flatness only rejects the take. The percentage is still the cosine.
-
-### Not run
-
-No commit. These were read and left out.
-
-- A codebook histogram, and a spectral-flatness fingerprint. Both compare an unordered collection of frames and answer which recording a library contains. This score has to follow one short clip in time.
-- MFCCs. The eight log bands were already the feature that held the copy, quiet-copy, and noise checks. The warp still compares those bands.
+Before scoring, the take is cut or padded with silence to the clip's length, so each 10 ms frame lines up. The end of `tests/battery.log` reports how many genuine pairs were rejected, how many impostors were accepted, and the threshold where those two rates are closest.
 
 ## Config
 
